@@ -1,14 +1,9 @@
-import type { QuantumRisk as BaseQuantumRisk } from "./quantum";
+import type { CountBuckets, QuantumRisk, Severity } from "./quantum";
 
-export type Severity = "Low" | "Medium" | "High";
+export type { CountBuckets, QuantumRisk, Severity } from "./quantum";
+
 export type OverallRisk = Severity | "None";
 export type ScanStatus = "Good" | "Warning" | "Risky";
-
-export type CountBuckets = {
-  high: number;
-  medium: number;
-  low: number;
-};
 
 export type ScanIssue = {
   id: string;
@@ -19,8 +14,6 @@ export type ScanIssue = {
   line?: number;
   snippet?: string;
 };
-
-export type QuantumRisk = BaseQuantumRisk;
 
 export type ScanResult = {
   issues: ScanIssue[];

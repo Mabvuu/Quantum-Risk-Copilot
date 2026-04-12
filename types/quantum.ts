@@ -1,4 +1,10 @@
-import { Severity } from "./report";
+export type Severity = "Low" | "Medium" | "High";
+
+export type CountBuckets = {
+  high: number;
+  medium: number;
+  low: number;
+};
 
 export type QuantumRisk = {
   id: string;
@@ -10,11 +16,7 @@ export type QuantumRisk = {
   snippet?: string;
 };
 
-export type QuantumCounts = {
-  high: number;
-  medium: number;
-  low: number;
-};
+export type QuantumCounts = CountBuckets;
 
 export type QuantumResult = {
   risks: QuantumRisk[];

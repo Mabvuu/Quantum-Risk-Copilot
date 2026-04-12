@@ -2,90 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ReportCard from "./ReportCard";
-import { ScanIssue } from "@/types/report";
+import {
+  ScanIssue,
+  Severity,
+  SystemModuleInput,
+  ModuleScanResult,
+  CrossModuleRisk,
+  SystemScanResult,
+} from "@/types/report";
 import {
   saferSampleContract,
   vulnerableSampleContract,
 } from "@/lib/sampleContracts";
 
-type Severity = "None" | "Low" | "Medium" | "High";
 type Status = "Good" | "Warning" | "Risky";
-
-type QuantumRisk = {
-  id: string;
-  title: string;
-  severity: "Low" | "Medium" | "High";
-  description: string;
-  recommendation: string;
-  line?: number;
-  snippet?: string;
-};
-
-type SystemModuleInput = {
-  id: string;
-  name: string;
-  code: string;
-};
-
-type ModuleScanResult = {
-  moduleId: string;
-  moduleName: string;
-  issues: ScanIssue[];
-  quantumRisks: QuantumRisk[];
-  summary: string;
-  overallRisk: Severity;
-  score: number;
-  status: Status;
-  contractType: string;
-  tips: string[];
-  counts: {
-    high: number;
-    medium: number;
-    low: number;
-  };
-  quantumCounts: {
-    high: number;
-    medium: number;
-    low: number;
-  };
-};
-
-type CrossModuleRisk = {
-  id: string;
-  title: string;
-  severity: "Low" | "Medium" | "High";
-  description: string;
-  recommendation: string;
-  modules: string[];
-};
-
-type SystemScanResult = {
-  issues: ScanIssue[];
-  quantumRisks: QuantumRisk[];
-  summary: string;
-  overallRisk: Severity;
-  score: number;
-  status: Status;
-  contractType: string;
-  tips: string[];
-  counts: {
-    high: number;
-    medium: number;
-    low: number;
-  };
-  quantumCounts: {
-    high: number;
-    medium: number;
-    low: number;
-  };
-  systemName?: string;
-  systemSummary?: string;
-  architectureNotes?: string;
-  touchpoints?: string[];
-  modulesScanned?: number;
-  moduleResults?: ModuleScanResult[];
-  crossModuleRisks?: CrossModuleRisk[];
-};
 
 type ScanHistoryItem = {
   id: string;
@@ -108,7 +38,7 @@ function createEmptyModule(index: number): SystemModuleInput {
   };
 }
 
-function getRiskClasses(risk: Severity) {
+function getRiskClasses(risk: Severity | "None") {
   if (risk === "High") return "border-red-800 bg-red-950/20 text-red-300";
   if (risk === "Medium") {
     return "border-yellow-800 bg-yellow-950/20 text-yellow-300";
@@ -126,21 +56,20 @@ function getStatusClasses(status: Status) {
 }
 
 function parseTouchpoints(value: string): string[] {
-  return [...new Set(
-    value
-      .split(/\n|,/g)
-      .map((item) => item.trim())
-      .filter(Boolean)
-  )];
+  return [
+    ...new Set(
+      value
+        .split(/\n|,/g)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    ),
+  ];
 }
 
 function combineModulesForAI(modules: SystemModuleInput[]) {
   return modules
     .filter((module) => module.code.trim())
-    .map(
-      (module) =>
-        `// MODULE: ${module.name}\n${module.code.trim()}`
-    )
+    .map((module) => `// MODULE: ${module.name}\n${module.code.trim()}`)
     .join("\n\n");
 }
 
@@ -203,7 +132,7 @@ export default function ScannerForm() {
   function updateModule(id: string, field: "name" | "code", value: string) {
     setModules((current) =>
       current.map((module) =>
-        module.id === id ? { ...module, [field]: value } : module
+        (module.id ?? "") === id ? { ...module, [field]: value } : module
       )
     );
     resetReport();
@@ -216,7 +145,7 @@ export default function ScannerForm() {
 
   function removeModule(id: string) {
     setModules((current) => {
-      const next = current.filter((module) => module.id !== id);
+      const next = current.filter((module) => (module.id ?? "") !== id);
       return next.length > 0 ? next : [createEmptyModule(1)];
     });
     resetReport();
@@ -272,8 +201,9 @@ export default function ScannerForm() {
     setAiExplanation("");
 
     const cleanedModules = modules
-      .map((module) => ({
+      .map((module, index) => ({
         ...module,
+        id: module.id?.trim() || `module-${index + 1}`,
         name: module.name.trim() || "Unnamed Module",
         code: module.code,
       }))
@@ -301,13 +231,13 @@ export default function ScannerForm() {
         }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as SystemScanResult | { error?: string };
 
       if (!response.ok) {
-        throw new Error(data?.error || "Scan failed.");
+        throw new Error("error" in data ? data.error || "Scan failed." : "Scan failed.");
       }
 
-      setResult(data);
+      setResult(data as SystemScanResult);
 
       const historyItem: ScanHistoryItem = {
         id: `${Date.now()}`,
@@ -316,7 +246,7 @@ export default function ScannerForm() {
         architectureNotes,
         touchpoints,
         modules: cleanedModules,
-        result: data,
+        result: data as SystemScanResult,
         aiExplanation: "",
       };
 
@@ -333,7 +263,13 @@ export default function ScannerForm() {
     setAiError("");
     setAiExplanation("");
 
-    const cleanedModules = modules.filter((module) => module.code.trim());
+    const cleanedModules = modules
+      .map((module, index) => ({
+        ...module,
+        id: module.id?.trim() || `module-${index + 1}`,
+        name: module.name.trim() || "Unnamed Module",
+      }))
+      .filter((module) => module.code.trim());
 
     if (cleanedModules.length === 0) {
       setAiError("Add module code first.");
@@ -365,7 +301,7 @@ export default function ScannerForm() {
         }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as { explanation?: string; error?: string };
 
       if (!response.ok) {
         throw new Error(data?.error || "AI explanation failed.");
@@ -417,8 +353,8 @@ export default function ScannerForm() {
     localStorage.removeItem(STORAGE_KEY);
   }
 
-  const moduleResults = result?.moduleResults || [];
-  const crossModuleRisks = result?.crossModuleRisks || [];
+  const moduleResults: ModuleScanResult[] = result?.moduleResults || [];
+  const crossModuleRisks: CrossModuleRisk[] = result?.crossModuleRisks || [];
 
   return (
     <section className="grid gap-6 lg:grid-cols-3">
@@ -509,37 +445,47 @@ export default function ScannerForm() {
             </button>
           </div>
 
-          {modules.map((module, index) => (
-            <div
-              key={module.id}
-              className="rounded-2xl border border-zinc-800 bg-black p-4"
-            >
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <input
-                  value={module.name}
-                  onChange={(e) => updateModule(module.id, "name", e.target.value)}
-                  placeholder={`Module ${index + 1}`}
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
+          {modules.map((module, index) => {
+            const moduleId = module.id ?? `module-${index + 1}`;
+
+            return (
+              <div
+                key={moduleId}
+                className="rounded-2xl border border-zinc-800 bg-black p-4"
+              >
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <input
+                    value={module.name}
+                    onChange={(e) =>
+                      updateModule(moduleId, "name", e.target.value)
+                    }
+                    placeholder={`Module ${index + 1}`}
+                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => removeModule(moduleId)}
+                    disabled={modules.length === 1}
+                    className="rounded-xl border border-red-800 bg-red-950/20 px-4 py-3 text-sm font-medium text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <textarea
+                  value={module.code}
+                  onChange={(e) =>
+                    updateModule(moduleId, "code", e.target.value)
+                  }
+                  placeholder={`Paste Solidity code for ${
+                    module.name || `Module ${index + 1}`
+                  }...`}
+                  className="min-h-[260px] w-full rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
                 />
-
-                <button
-                  type="button"
-                  onClick={() => removeModule(module.id)}
-                  disabled={modules.length === 1}
-                  className="rounded-xl border border-red-800 bg-red-950/20 px-4 py-3 text-sm font-medium text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Remove
-                </button>
               </div>
-
-              <textarea
-                value={module.code}
-                onChange={(e) => updateModule(module.id, "code", e.target.value)}
-                placeholder={`Paste Solidity code for ${module.name || `Module ${index + 1}`}...`}
-                className="min-h-[260px] w-full rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3">
@@ -651,7 +597,9 @@ export default function ScannerForm() {
                     </div>
 
                     <p className="mt-3 text-xs text-zinc-400">
-                      {item.result.systemSummary || item.result.summary || "No summary."}
+                      {item.result.systemSummary ||
+                        item.result.summary ||
+                        "No summary."}
                     </p>
                   </button>
 
@@ -672,11 +620,14 @@ export default function ScannerForm() {
       </div>
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-lg">
-        <h2 className="mb-4 text-xl font-semibold text-white">System Scan Report</h2>
+        <h2 className="mb-4 text-xl font-semibold text-white">
+          System Scan Report
+        </h2>
 
         {!hasScanned ? (
           <div className="rounded-xl border border-dashed border-zinc-700 bg-black/40 p-6 text-sm text-zinc-400">
-            No scan yet. Add modules and click <span className="text-white">Scan System</span>.
+            No scan yet. Add modules and click{" "}
+            <span className="text-white">Scan System</span>.
           </div>
         ) : error ? (
           <div className="rounded-xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-300">
@@ -699,7 +650,9 @@ export default function ScannerForm() {
               </div>
 
               <div
-                className={`rounded-xl border p-4 ${getRiskClasses(result.overallRisk)}`}
+                className={`rounded-xl border p-4 ${getRiskClasses(
+                  result.overallRisk
+                )}`}
               >
                 <p className="text-xs font-semibold uppercase tracking-wide">
                   Overall Risk
@@ -719,7 +672,9 @@ export default function ScannerForm() {
               </div>
 
               <div
-                className={`rounded-xl border p-4 ${getStatusClasses(result.status)}`}
+                className={`rounded-xl border p-4 ${getStatusClasses(
+                  result.status
+                )}`}
               >
                 <p className="text-xs font-semibold uppercase tracking-wide">
                   Status
@@ -994,7 +949,7 @@ export default function ScannerForm() {
                           Findings
                         </p>
 
-                        {module.issues.map((issue) => (
+                        {module.issues.map((issue: ScanIssue) => (
                           <ReportCard
                             key={issue.id}
                             title={issue.title}
@@ -1015,7 +970,7 @@ export default function ScannerForm() {
                 ))}
               </div>
             ) : result.issues.length > 0 ? (
-              result.issues.map((issue) => (
+              result.issues.map((issue: ScanIssue) => (
                 <ReportCard
                   key={issue.id}
                   title={issue.title}
