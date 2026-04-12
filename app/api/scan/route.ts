@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     const result = scanSmartContract(code);
 
     return NextResponse.json(result);
-  } catch {
+  } catch  {
     return NextResponse.json(
       { error: "Something went wrong while scanning." },
       { status: 500 }

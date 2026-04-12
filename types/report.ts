@@ -10,8 +10,19 @@ export type ScanIssue = {
   snippet?: string;
 };
 
+export type QuantumRisk = {
+  id: string;
+  title: string;
+  severity: Severity;
+  description: string;
+  recommendation: string;
+  line?: number;
+  snippet?: string;
+};
+
 export type ScanResult = {
   issues: ScanIssue[];
+  quantumRisks: QuantumRisk[];
   summary: string;
   overallRisk: Severity | "None";
   score: number;
@@ -19,6 +30,11 @@ export type ScanResult = {
   contractType: string;
   tips: string[];
   counts: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+  quantumCounts: {
     high: number;
     medium: number;
     low: number;

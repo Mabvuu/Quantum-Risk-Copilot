@@ -8,11 +8,22 @@ import {
   vulnerableSampleContract,
 } from "@/lib/sampleContracts";
 
+type QuantumRisk = {
+  id: string;
+  title: string;
+  severity: "Low" | "Medium" | "High";
+  description: string;
+  recommendation: string;
+  line?: number;
+  snippet?: string;
+};
+
 type ScanHistoryItem = {
   id: string;
   savedAt: string;
   code: string;
   issues: ScanIssue[];
+  quantumRisks: QuantumRisk[];
   summary: string;
   overallRisk: "None" | "Low" | "Medium" | "High";
   score: number;
@@ -20,6 +31,11 @@ type ScanHistoryItem = {
   contractType: string;
   tips: string[];
   counts: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+  quantumCounts: {
     high: number;
     medium: number;
     low: number;
@@ -52,6 +68,7 @@ export default function ScannerForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [isExplaining, setIsExplaining] = useState(false);
   const [issues, setIssues] = useState<ScanIssue[]>([]);
+  const [quantumRisks, setQuantumRisks] = useState<QuantumRisk[]>([]);
   const [summary, setSummary] = useState("");
   const [overallRisk, setOverallRisk] = useState<
     "None" | "Low" | "Medium" | "High"
@@ -61,6 +78,11 @@ export default function ScannerForm() {
   const [contractType, setContractType] = useState("Unknown");
   const [tips, setTips] = useState<string[]>([]);
   const [counts, setCounts] = useState({
+    high: 0,
+    medium: 0,
+    low: 0,
+  });
+  const [quantumCounts, setQuantumCounts] = useState({
     high: 0,
     medium: 0,
     low: 0,
@@ -97,6 +119,7 @@ export default function ScannerForm() {
   function resetReport() {
     setHasScanned(false);
     setIssues([]);
+    setQuantumRisks([]);
     setSummary("");
     setOverallRisk("None");
     setScore(100);
@@ -104,6 +127,7 @@ export default function ScannerForm() {
     setContractType("Unknown");
     setTips([]);
     setCounts({ high: 0, medium: 0, low: 0 });
+    setQuantumCounts({ high: 0, medium: 0, low: 0 });
     setError("");
     setAiExplanation("");
     setAiError("");
@@ -132,6 +156,7 @@ export default function ScannerForm() {
 
     if (!code.trim()) {
       setIssues([]);
+      setQuantumRisks([]);
       setSummary("");
       setOverallRisk("None");
       setScore(100);
@@ -139,6 +164,7 @@ export default function ScannerForm() {
       setContractType("Unknown");
       setTips([]);
       setCounts({ high: 0, medium: 0, low: 0 });
+      setQuantumCounts({ high: 0, medium: 0, low: 0 });
       return;
     }
 
@@ -159,7 +185,10 @@ export default function ScannerForm() {
         throw new Error(data?.error || "Scan failed.");
       }
 
-      const nextIssues = data.issues || [];
+      const nextIssues = Array.isArray(data.issues) ? data.issues : [];
+      const nextQuantumRisks = Array.isArray(data.quantumRisks)
+        ? data.quantumRisks
+        : [];
       const nextSummary = data.summary || "";
       const nextOverallRisk = data.overallRisk || "None";
       const nextScore = typeof data.score === "number" ? data.score : 100;
@@ -171,8 +200,14 @@ export default function ScannerForm() {
         medium: 0,
         low: 0,
       };
+      const nextQuantumCounts = data.quantumCounts || {
+        high: 0,
+        medium: 0,
+        low: 0,
+      };
 
       setIssues(nextIssues);
+      setQuantumRisks(nextQuantumRisks);
       setSummary(nextSummary);
       setOverallRisk(nextOverallRisk);
       setScore(nextScore);
@@ -180,12 +215,14 @@ export default function ScannerForm() {
       setContractType(nextContractType);
       setTips(nextTips);
       setCounts(nextCounts);
+      setQuantumCounts(nextQuantumCounts);
 
       const historyItem: ScanHistoryItem = {
         id: `${Date.now()}`,
         savedAt: new Date().toISOString(),
         code,
         issues: nextIssues,
+        quantumRisks: nextQuantumRisks,
         summary: nextSummary,
         overallRisk: nextOverallRisk,
         score: nextScore,
@@ -193,12 +230,14 @@ export default function ScannerForm() {
         contractType: nextContractType,
         tips: nextTips,
         counts: nextCounts,
+        quantumCounts: nextQuantumCounts,
         aiExplanation: "",
       };
 
       saveHistoryItem(historyItem);
     } catch (err) {
       setIssues([]);
+      setQuantumRisks([]);
       setSummary("");
       setOverallRisk("None");
       setScore(100);
@@ -206,6 +245,7 @@ export default function ScannerForm() {
       setContractType("Unknown");
       setTips([]);
       setCounts({ high: 0, medium: 0, low: 0 });
+      setQuantumCounts({ high: 0, medium: 0, low: 0 });
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setIsLoading(false);
@@ -232,6 +272,7 @@ export default function ScannerForm() {
         body: JSON.stringify({
           code,
           issues,
+          quantumRisks,
           contractType,
           overallRisk,
           score,
@@ -254,6 +295,7 @@ export default function ScannerForm() {
           savedAt: new Date().toISOString(),
           code,
           issues,
+          quantumRisks,
           summary,
           overallRisk,
           score,
@@ -261,6 +303,7 @@ export default function ScannerForm() {
           contractType,
           tips,
           counts,
+          quantumCounts,
           aiExplanation: explanation,
         };
 
@@ -279,6 +322,7 @@ export default function ScannerForm() {
     setCode(item.code);
     setHasScanned(true);
     setIssues(item.issues);
+    setQuantumRisks(item.quantumRisks || []);
     setSummary(item.summary);
     setOverallRisk(item.overallRisk);
     setScore(item.score);
@@ -286,6 +330,9 @@ export default function ScannerForm() {
     setContractType(item.contractType);
     setTips(item.tips);
     setCounts(item.counts);
+    setQuantumCounts(
+      item.quantumCounts || { high: 0, medium: 0, low: 0 }
+    );
     setAiExplanation(item.aiExplanation || "");
     setAiError("");
     setError("");
@@ -570,6 +617,35 @@ contract Test {
               </div>
             </div>
 
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-xl border border-red-900 bg-red-950/20 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-400">
+                  Quantum High
+                </p>
+                <p className="mt-2 text-2xl font-bold text-red-300">
+                  {quantumCounts.high}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-yellow-900 bg-yellow-950/20 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-yellow-400">
+                  Quantum Medium
+                </p>
+                <p className="mt-2 text-2xl font-bold text-yellow-300">
+                  {quantumCounts.medium}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-blue-900 bg-blue-950/20 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-400">
+                  Quantum Low
+                </p>
+                <p className="mt-2 text-2xl font-bold text-blue-300">
+                  {quantumCounts.low}
+                </p>
+              </div>
+            </div>
+
             {tips.length > 0 && (
               <div className="rounded-xl border border-zinc-800 bg-black p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -601,6 +677,32 @@ contract Test {
                 </pre>
               </div>
             )}
+
+            <div className="rounded-xl border border-purple-800 bg-purple-950/20 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-purple-300">
+                Quantum Risks
+              </p>
+
+              {quantumRisks.length === 0 ? (
+                <div className="mt-3 rounded-xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
+                  No obvious quantum risks were found by this basic scanner.
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {quantumRisks.map((risk) => (
+                    <ReportCard
+                      key={risk.id}
+                      title={risk.title}
+                      severity={risk.severity}
+                      description={risk.description}
+                      recommendation={risk.recommendation}
+                      line={risk.line}
+                      snippet={risk.snippet}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
 
             {issues.length === 0 ? (
               <div className="rounded-xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
