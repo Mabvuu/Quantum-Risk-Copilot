@@ -1,91 +1,150 @@
 import { QuantumRisk } from "@/types/quantum";
 
+function findLineInfo(code: string, matcher: (line: string) => boolean) {
+  const lines = code.split("\n");
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+
+    if (matcher(line)) {
+      return {
+        line: index + 1,
+        snippet: line.trim(),
+      };
+    }
+  }
+
+  return {
+    line: undefined,
+    snippet: undefined,
+  };
+}
+
 export function detectQuantumRisks(code: string): QuantumRisk[] {
   const risks: QuantumRisk[] = [];
-  const lower = code.toLowerCase();
 
-  function push(risk: QuantumRisk) {
-    risks.push(risk);
-  }
+  function pushRisk(
+    risk: Omit<QuantumRisk, "line" | "snippet">,
+    matcher?: RegExp
+  ) {
+    if (risks.some((item) => item.id === risk.id)) return;
 
-  if (lower.includes("ecrecover")) {
-    push({
-      id: "ecdsa-dependence",
-      title: "ECDSA signature dependence",
-      severity: "High",
-      description:
-        "ECDSA signatures can be broken by quantum computers (Shor’s algorithm).",
-      recommendation:
-        "Plan migration to post-quantum signature schemes (e.g. lattice-based).",
+    const info = matcher
+      ? findLineInfo(code, (line) => matcher.test(line))
+      : { line: undefined, snippet: undefined };
+
+    risks.push({
+      ...risk,
+      line: info.line,
+      snippet: info.snippet,
     });
   }
 
-  if (lower.includes("signature") || lower.includes("verify")) {
-    push({
-      id: "signature-dependence",
-      title: "Signature-based authentication",
-      severity: "High",
-      description:
-        "Authentication relying on signatures may become insecure under quantum attacks.",
-      recommendation:
-        "Introduce crypto-agility to swap signature schemes in future.",
-    });
+  if (/\becrecover\b/i.test(code)) {
+    pushRisk(
+      {
+        id: "ecdsa-dependence",
+        title: "ECDSA signature dependence",
+        severity: "High",
+        description:
+          "This module uses ECDSA-style signature recovery. Long-term, that becomes a serious risk under quantum attacks.",
+        recommendation:
+          "Plan migration toward post-quantum-safe authentication or crypto-agile verification layers.",
+      },
+      /\becrecover\b/i
+    );
   }
 
   if (
-    lower.includes("owner") ||
-    lower.includes("admin") ||
-    lower.includes("onlyowner")
+    /\b(signature|signer|signed|verify|verification|ecdsa|permit\s*\()\b/i.test(
+      code
+    )
   ) {
-    push({
-      id: "centralized-signer",
-      title: "Centralized admin/signer risk",
-      severity: "Medium",
-      description:
-        "Single key control becomes a major risk if quantum attacks compromise keys.",
-      recommendation:
-        "Use multi-sig or distributed key control.",
-    });
+    pushRisk(
+      {
+        id: "signature-based-auth",
+        title: "Signature-based authentication",
+        severity: "High",
+        description:
+          "The module appears to depend on signature verification or signer trust. That can become unsafe if current signature schemes are broken.",
+        recommendation:
+          "Add crypto-agility so the verification method can be upgraded later without redesigning the whole system.",
+      },
+      /\b(signature|signer|signed|verify|verification|ecdsa|permit\s*\()\b/i
+    );
+  }
+
+  if (/\b(owner|admin|onlyowner|onlyrole|accesscontrol)\b/i.test(code)) {
+    pushRisk(
+      {
+        id: "centralized-admin-key",
+        title: "Centralized admin or signer risk",
+        severity: "Medium",
+        description:
+          "This module appears to rely on privileged accounts or admin-controlled paths. That becomes more dangerous if key security weakens over time.",
+        recommendation:
+          "Reduce single-key dependency with stronger admin separation, multisig, or distributed controls.",
+      },
+      /\b(owner|admin|onlyowner|onlyrole|accesscontrol)\b/i
+    );
   }
 
   if (
-    !lower.includes("rotate") &&
-    !lower.includes("migration") &&
-    !lower.includes("upgrade")
+    !/\b(rotate|rotation|migrate|migration|crypto-agility|algorithm|scheme upgrade)\b/i.test(
+      code
+    )
   ) {
-    push({
+    pushRisk({
       id: "no-crypto-agility",
-      title: "No crypto agility",
+      title: "No visible crypto agility",
       severity: "High",
       description:
-        "No visible way to upgrade cryptographic primitives in the future.",
+        "There is no obvious sign that the cryptographic approach can be rotated or replaced later.",
       recommendation:
-        "Design upgradeable cryptographic modules.",
+        "Design the verification/authentication layer so cryptographic primitives can be swapped in future.",
     });
   }
 
-  if (lower.includes("oracle") || lower.includes("bridge")) {
-    push({
-      id: "external-trust",
-      title: "External dependency risk (oracle/bridge)",
-      severity: "Medium",
+  if (/\b(oracle|bridge|relayer|cross-chain|cross chain)\b/i.test(code)) {
+    pushRisk(
+      {
+        id: "external-cryptographic-dependency",
+        title: "External trust dependency",
+        severity: "Medium",
+        description:
+          "This module appears tied to bridges, relayers, or other external trust points. Those paths can amplify cryptographic and coordination risk.",
+        recommendation:
+          "Review every external trust boundary and document how failures or weak signatures are handled.",
+      },
+      /\b(oracle|bridge|relayer|cross-chain|cross chain)\b/i
+    );
+  }
+
+  if (!/\b(upgrade|upgradable|upgradeable|proxy|initializer)\b/i.test(code)) {
+    pushRisk({
+      id: "no-upgrade-path",
+      title: "No visible upgrade path",
+      severity: "High",
       description:
-        "External systems may break under quantum attacks or introduce weak trust assumptions.",
+        "There is no obvious upgrade mechanism, which makes future migration to safer cryptography harder.",
       recommendation:
-        "Validate and harden external dependencies.",
+        "Add a controlled upgrade path or modular replacement strategy for critical cryptographic logic.",
     });
   }
 
-  if (!lower.includes("upgrade") && !lower.includes("proxy")) {
-    push({
-      id: "no-upgradeability",
-      title: "No upgrade mechanism",
-      severity: "High",
-      description:
-        "System cannot be easily upgraded to post-quantum cryptography.",
-      recommendation:
-        "Introduce upgradeable architecture (proxy pattern).",
-    });
+  if (/\b(keccak256|sha256|merkle)\b/i.test(code)) {
+    pushRisk(
+      {
+        id: "hash-heavy-security-assumption",
+        title: "Hash-based security dependency",
+        severity: "Low",
+        description:
+          "This module depends on hash-based logic or integrity checks. That is not an immediate break here, but cryptographic assumptions should still be documented clearly.",
+        recommendation:
+          "Document where hashes are used for trust, proof, or validation so migration planning is easier later.",
+      },
+      /\b(keccak256|sha256|merkle)\b/i
+    );
   }
 
   return risks;

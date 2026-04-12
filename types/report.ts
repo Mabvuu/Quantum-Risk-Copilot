@@ -1,4 +1,14 @@
+import type { QuantumRisk as BaseQuantumRisk } from "./quantum";
+
 export type Severity = "Low" | "Medium" | "High";
+export type OverallRisk = Severity | "None";
+export type ScanStatus = "Good" | "Warning" | "Risky";
+
+export type CountBuckets = {
+  high: number;
+  medium: number;
+  low: number;
+};
 
 export type ScanIssue = {
   id: string;
@@ -10,35 +20,56 @@ export type ScanIssue = {
   snippet?: string;
 };
 
-export type QuantumRisk = {
-  id: string;
-  title: string;
-  severity: Severity;
-  description: string;
-  recommendation: string;
-  line?: number;
-  snippet?: string;
-};
+export type QuantumRisk = BaseQuantumRisk;
 
 export type ScanResult = {
   issues: ScanIssue[];
   quantumRisks: QuantumRisk[];
   summary: string;
-  overallRisk: Severity | "None";
+  overallRisk: OverallRisk;
   score: number;
-  status: "Good" | "Warning" | "Risky";
+  status: ScanStatus;
   contractType: string;
   tips: string[];
-  counts: {
-    high: number;
-    medium: number;
-    low: number;
-  };
-  quantumCounts: {
-    high: number;
-    medium: number;
-    low: number;
-  };
+  counts: CountBuckets;
+  quantumCounts: CountBuckets;
+};
+
+export type SystemModuleInput = {
+  id?: string;
+  name: string;
+  code: string;
+};
+
+export type ModuleScanResult = ScanResult & {
+  moduleId: string;
+  moduleName: string;
+};
+
+export type CrossModuleRisk = {
+  id: string;
+  title: string;
+  severity: Severity;
+  description: string;
+  recommendation: string;
+  modules: string[];
+};
+
+export type SystemScanInput = {
+  systemName?: string;
+  architectureNotes?: string;
+  touchpoints?: string[];
+  modules: SystemModuleInput[];
+};
+
+export type SystemScanResult = ScanResult & {
+  systemName: string;
+  systemSummary: string;
+  architectureNotes: string;
+  touchpoints: string[];
+  modulesScanned: number;
+  moduleResults: ModuleScanResult[];
+  crossModuleRisks: CrossModuleRisk[];
 };
 
 export type AIExplainResult = {

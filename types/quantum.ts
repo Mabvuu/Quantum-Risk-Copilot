@@ -10,11 +10,13 @@ export type QuantumRisk = {
   snippet?: string;
 };
 
+export type QuantumCounts = {
+  high: number;
+  medium: number;
+  low: number;
+};
+
 export type QuantumResult = {
   risks: QuantumRisk[];
-  counts: {
-    high: number;
-    medium: number;
-    low: number;
-  };
+  counts: QuantumCounts;
 };

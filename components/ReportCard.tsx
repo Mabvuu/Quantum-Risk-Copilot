@@ -40,10 +40,8 @@ export default function ReportCard({
         </span>
       </div>
 
-      {line && (
-        <p className="mb-2 text-xs font-medium text-zinc-500">
-          Line {line}
-        </p>
+      {typeof line === "number" && (
+        <p className="mb-2 text-xs font-medium text-zinc-500">Line {line}</p>
       )}
 
       <p className="mb-3 text-sm text-zinc-400">{description}</p>
