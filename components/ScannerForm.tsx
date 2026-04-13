@@ -311,6 +311,39 @@ function ActionButton({
   );
 }
 
+function Modal({
+  isOpen,
+  title,
+  onClose,
+  children,
+}: {
+  isOpen: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0b] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <h3 className="text-lg font-semibold text-white">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white transition hover:bg-white/[0.10]"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function ScannerForm() {
   const [systemName, setSystemName] = useState("Quantum Risk Copilot System");
   const [architectureNotes, setArchitectureNotes] = useState("");
@@ -330,6 +363,7 @@ export default function ScannerForm() {
   const [history, setHistory] = useState<ScanHistoryItem[]>([]);
   const [result, setResult] = useState<SystemScanResult | null>(null);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [saveFileName, setSaveFileName] = useState("quantum-risk-report");
 
   const touchpoints = useMemo(
@@ -375,6 +409,7 @@ export default function ScannerForm() {
     setAiExplanation("");
     setAiError("");
     setIsReportOpen(false);
+    setIsAiModalOpen(false);
   }
 
   function updateModule(id: string, field: "name" | "code", value: string) {
@@ -455,6 +490,7 @@ export default function ScannerForm() {
     setAiError("");
     setAiExplanation("");
     setIsReportOpen(false);
+    setIsAiModalOpen(false);
 
     const cleanedModules = modules
       .map((moduleItem, index) => ({
@@ -487,9 +523,14 @@ export default function ScannerForm() {
         }),
       });
 
-      const data = (await response.json()) as
-        | SystemScanResult
-        | { error?: string };
+      const rawText = await response.text();
+      let data: SystemScanResult | { error?: string } = {};
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { error: rawText || "Scan failed." };
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -525,6 +566,7 @@ export default function ScannerForm() {
   async function handleExplainWithAI() {
     setAiError("");
     setAiExplanation("");
+    setIsAiModalOpen(false);
 
     const cleanedModules = modules
       .map((moduleItem, index) => ({
@@ -564,17 +606,22 @@ export default function ScannerForm() {
         }),
       });
 
-      const data = (await response.json()) as {
-        explanation?: string;
-        error?: string;
-      };
+      const rawText = await response.text();
+      let data: { explanation?: string; error?: string } = {};
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { error: rawText || "AI explanation failed." };
+      }
 
       if (!response.ok) {
-        throw new Error(data?.error || "AI explanation failed.");
+        throw new Error(data?.error || rawText || "AI explanation failed.");
       }
 
       const explanation = data.explanation || "No explanation returned.";
       setAiExplanation(explanation);
+      setIsAiModalOpen(true);
 
       if (result) {
         const historyItem: ScanHistoryItem = {
@@ -609,6 +656,7 @@ export default function ScannerForm() {
     setHasScanned(true);
     setSaveFileName(slugifyFileName(item.systemName));
     setIsReportOpen(false);
+    setIsAiModalOpen(false);
   }
 
   function handleDeleteHistoryItem(id: string) {
@@ -665,7 +713,7 @@ export default function ScannerForm() {
                 </p>
               </div>
 
-              <div className="grid w-full gap-2 sm:grid-cols-2 xl:grid-cols-5 2xl:max-w-[980px]">
+              <div className="grid w-full gap-2 sm:grid-cols-2 xl:grid-cols-6 2xl:max-w-[1180px]">
                 <ActionButton
                   onClick={handleScan}
                   disabled={isLoading}
@@ -688,14 +736,22 @@ export default function ScannerForm() {
                   disabled={isExplaining || !hasScanned || !result}
                   variant="secondary"
                 >
-                  {isExplaining ? "Explaining..." : "Explain with API"}
+                  {isExplaining ? "Explaining..." : "Explain with AI"}
+                </ActionButton>
+
+                <ActionButton
+                  onClick={() => setIsAiModalOpen(true)}
+                  disabled={!aiExplanation}
+                  variant="secondary"
+                >
+                  View AI
                 </ActionButton>
 
                 <ActionButton onClick={handleLoadSingleSample} variant="ghost">
                   Load Single Sample
                 </ActionButton>
 
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 xl:grid-cols-2">
+                <div className="grid grid-cols-2 gap-2">
                   <ActionButton onClick={handleLoadSystemSample} variant="ghost">
                     Load Multi
                   </ActionButton>
@@ -708,7 +764,7 @@ export default function ScannerForm() {
           </div>
 
           <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.9fr)_420px]">
-            <div className="space-y-4 min-w-0">
+            <div className="min-w-0 space-y-4">
               <SectionCard
                 title="System Modules"
                 action={
@@ -810,7 +866,7 @@ export default function ScannerForm() {
                 </SectionCard>
               </div>
 
-              {(error || aiError || aiExplanation) && (
+              {(error || aiError) && (
                 <div className="space-y-4">
                   {error && (
                     <div className="rounded-2xl border border-white/15 bg-white/[0.04] p-4 text-sm text-zinc-200">
@@ -822,14 +878,6 @@ export default function ScannerForm() {
                     <div className="rounded-2xl border border-white/15 bg-white/[0.04] p-4 text-sm text-zinc-200">
                       {aiError}
                     </div>
-                  )}
-
-                  {aiExplanation && (
-                    <SectionCard title="AI Explanation">
-                      <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-zinc-300">
-                        {aiExplanation}
-                      </pre>
-                    </SectionCard>
                   )}
                 </div>
               )}
@@ -1209,6 +1257,20 @@ export default function ScannerForm() {
         onFileNameChange={setSaveFileName}
         onSave={handleSaveReport}
       />
+
+      <Modal
+        isOpen={isAiModalOpen}
+        title="AI Explanation"
+        onClose={() => setIsAiModalOpen(false)}
+      >
+        {aiExplanation ? (
+          <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-zinc-200">
+            {aiExplanation}
+          </pre>
+        ) : (
+          <p className="text-sm text-zinc-400">No AI explanation yet.</p>
+        )}
+      </Modal>
     </>
   );
 }
