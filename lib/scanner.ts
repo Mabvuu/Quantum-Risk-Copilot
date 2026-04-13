@@ -32,7 +32,12 @@ function getOverallRisk(items: Array<{ severity: Severity }>): OverallRisk {
 }
 
 function getScore(items: Array<{ severity: Severity }>): number {
-  const weights = { High: 25, Medium: 12, Low: 5 };
+  const weights: Record<Severity, number> = {
+    High: 25,
+    Medium: 12,
+    Low: 5,
+  };
+
   const penalty = items.reduce((sum, i) => sum + weights[i.severity], 0);
   return Math.max(0, 100 - penalty);
 }
@@ -74,15 +79,10 @@ function extractFunctionBlocks(code: string): FunctionBlock[] {
   });
 }
 
-/* ======================
-   CORE SCAN (IMPROVED)
-====================== */
-
 function scanSingleModule(code: string): ScanResult {
   const issues: ScanIssue[] = [];
   const blocks = extractFunctionBlocks(code);
 
-  // BASIC CHECKS (still MVP but cleaner)
   if (/tx\.origin/.test(code)) {
     issues.push({
       id: "tx-origin",
@@ -103,7 +103,6 @@ function scanSingleModule(code: string): ScanResult {
     });
   }
 
-  // FUNCTION-LEVEL LOGIC (THIS IS THE REAL UPGRADE)
   blocks.forEach((block) => {
     const body = block.body;
 
@@ -132,8 +131,8 @@ function scanSingleModule(code: string): ScanResult {
   });
 
   const quantum = scanQuantum(code);
-
   const all = [...issues, ...quantum.risks];
+  const score = getScore(all);
 
   return {
     issues: sortBySeverity(issues),
@@ -143,18 +142,14 @@ function scanSingleModule(code: string): ScanResult {
         ? "No major issues"
         : "Issues detected",
     overallRisk: getOverallRisk(all),
-    score: getScore(all),
-    status: getStatus(getScore(all)),
+    score,
+    status: getStatus(score),
     contractType: "Smart Contract",
     tips: ["Review access control", "Avoid unsafe calls"],
     counts: buildCounts(issues),
     quantumCounts: quantum.counts,
   };
 }
-
-/* ======================
-   SYSTEM LEVEL (KEY PART)
-====================== */
 
 function detectCrossModuleRisks(
   input: SystemScanInput
@@ -190,10 +185,6 @@ function detectCrossModuleRisks(
   return risks;
 }
 
-/* ======================
-   ENTRY
-====================== */
-
 function toSystemInput(input: string | SystemScanInput): SystemScanInput {
   if (typeof input === "string") {
     return {
@@ -201,6 +192,7 @@ function toSystemInput(input: string | SystemScanInput): SystemScanInput {
       modules: [{ name: "Main", code: input }],
     };
   }
+
   return input;
 }
 
@@ -211,6 +203,7 @@ export function scanSmartContract(
 
   const moduleResults: ModuleScanResult[] = system.modules.map((m, i) => {
     const res = scanSingleModule(m.code);
+
     return {
       ...res,
       moduleId: m.id || `module-${i}`,
