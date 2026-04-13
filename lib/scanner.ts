@@ -12,6 +12,8 @@ import {
 } from "@/types/report";
 import { scanQuantum } from "./quantumScanner";
 
+export type { SystemScanInput, SystemScanResult } from "@/types/report";
+
 type FunctionBlock = {
   name: string;
   headerLine: number;
@@ -167,11 +169,7 @@ function detectCrossModuleRisks(
     });
   }
 
-  if (
-    input.touchpoints?.some((t) =>
-      /bridge|oracle|offchain/i.test(t)
-    )
-  ) {
+  if (input.touchpoints?.some((t) => /bridge|oracle|offchain/i.test(t))) {
     risks.push({
       id: "quantum-touchpoint",
       title: "Quantum-sensitive touchpoint",
@@ -228,13 +226,10 @@ export function scanSmartContract(
     overallRisk: getOverallRisk(allSignals),
     score,
     status: getStatus(score),
-    contractType:
-      moduleResults.length > 1 ? "System" : "Smart Contract",
+    contractType: moduleResults.length > 1 ? "System" : "Smart Contract",
     tips: ["Review system interactions"],
     counts: buildCounts(moduleResults.flatMap((m) => m.issues)),
-    quantumCounts: buildCounts(
-      moduleResults.flatMap((m) => m.quantumRisks)
-    ),
+    quantumCounts: buildCounts(moduleResults.flatMap((m) => m.quantumRisks)),
     systemName: system.systemName || "System",
     systemSummary: "Multi-module analysis complete",
     architectureNotes: system.architectureNotes || "",
