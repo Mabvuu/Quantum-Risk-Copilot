@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import ReportCard from "./ReportCard";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  ScanIssue,
   Severity,
   SystemModuleInput,
   ModuleScanResult,
@@ -14,6 +12,7 @@ import {
   saferSampleContract,
   vulnerableSampleContract,
 } from "@/lib/sampleContracts";
+import FullReportModal, { ReportSlide } from "./FullReportModal";
 
 type Status = "Good" | "Warning" | "Risky";
 
@@ -38,21 +37,27 @@ function createEmptyModule(index: number): SystemModuleInput {
   };
 }
 
+function slugifyFileName(value: string) {
+  return (
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "quantum-risk-report"
+  );
+}
+
 function getRiskClasses(risk: Severity | "None") {
-  if (risk === "High") return "border-red-800 bg-red-950/20 text-red-300";
-  if (risk === "Medium") {
-    return "border-yellow-800 bg-yellow-950/20 text-yellow-300";
-  }
-  if (risk === "Low") return "border-blue-800 bg-blue-950/20 text-blue-300";
-  return "border-green-800 bg-green-950/20 text-green-300";
+  if (risk === "High") return "border-white/25 bg-white text-black";
+  if (risk === "Medium") return "border-white/20 bg-white/10 text-white";
+  if (risk === "Low") return "border-white/20 bg-white/5 text-zinc-200";
+  return "border-white/15 bg-white/[0.03] text-zinc-300";
 }
 
 function getStatusClasses(status: Status) {
-  if (status === "Risky") return "border-red-800 bg-red-950/20 text-red-300";
-  if (status === "Warning") {
-    return "border-yellow-800 bg-yellow-950/20 text-yellow-300";
-  }
-  return "border-green-800 bg-green-950/20 text-green-300";
+  if (status === "Risky") return "border-white/25 bg-white text-black";
+  if (status === "Warning") return "border-white/20 bg-white/10 text-white";
+  return "border-white/15 bg-white/[0.03] text-zinc-300";
 }
 
 function parseTouchpoints(value: string): string[] {
@@ -66,11 +71,244 @@ function parseTouchpoints(value: string): string[] {
   ];
 }
 
-function combineModulesForAI(modules: SystemModuleInput[]) {
-  return modules
-    .filter((module) => module.code.trim())
-    .map((module) => `// MODULE: ${module.name}\n${module.code.trim()}`)
+function combineModulesForAI(moduleList: SystemModuleInput[]) {
+  return moduleList
+    .filter((moduleItem) => moduleItem.code.trim())
+    .map(
+      (moduleItem) =>
+        `// MODULE: ${moduleItem.name}\n${moduleItem.code.trim()}`
+    )
     .join("\n\n");
+}
+
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], {
+    type: "application/json;charset=utf-8",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = filename;
+
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+function buildReportSlides(scanResult: SystemScanResult | null): ReportSlide[] {
+  if (!scanResult) return [];
+
+  const slides: ReportSlide[] = [
+    {
+      id: "summary-slide",
+      title: "System Summary",
+      severity: scanResult.overallRisk,
+      description:
+        scanResult.systemSummary || scanResult.summary || "No summary available.",
+      recommendation:
+        scanResult.tips?.length > 0
+          ? `Start with these:\n• ${scanResult.tips.join("\n• ")}`
+          : "Review each finding in order and fix the highest-risk items first.",
+      kind: "summary",
+    },
+  ];
+
+  const moduleResults: ModuleScanResult[] = scanResult.moduleResults || [];
+
+  if (moduleResults.length > 0) {
+    for (const moduleItem of moduleResults) {
+      for (const issueItem of moduleItem.issues || []) {
+        slides.push({
+          id: `issue-${moduleItem.moduleId}-${issueItem.id}`,
+          title: issueItem.title,
+          severity: issueItem.severity,
+          description: issueItem.description,
+          recommendation: issueItem.recommendation,
+          moduleName: moduleItem.moduleName,
+          line: issueItem.line,
+          snippet: issueItem.snippet,
+          kind: "issue",
+        });
+      }
+
+      for (const quantumRiskItem of moduleItem.quantumRisks || []) {
+        slides.push({
+          id: `quantum-${moduleItem.moduleId}-${quantumRiskItem.id}`,
+          title: quantumRiskItem.title,
+          severity: quantumRiskItem.severity,
+          description: quantumRiskItem.description,
+          recommendation: quantumRiskItem.recommendation,
+          moduleName: moduleItem.moduleName,
+          line: quantumRiskItem.line,
+          snippet: quantumRiskItem.snippet,
+          kind: "quantum",
+        });
+      }
+    }
+  } else {
+    for (const issueItem of scanResult.issues || []) {
+      slides.push({
+        id: `issue-${issueItem.id}`,
+        title: issueItem.title,
+        severity: issueItem.severity,
+        description: issueItem.description,
+        recommendation: issueItem.recommendation,
+        line: issueItem.line,
+        snippet: issueItem.snippet,
+        kind: "issue",
+      });
+    }
+
+    for (const quantumRiskItem of scanResult.quantumRisks || []) {
+      slides.push({
+        id: `quantum-${quantumRiskItem.id}`,
+        title: quantumRiskItem.title,
+        severity: quantumRiskItem.severity,
+        description: quantumRiskItem.description,
+        recommendation: quantumRiskItem.recommendation,
+        line: quantumRiskItem.line,
+        snippet: quantumRiskItem.snippet,
+        kind: "quantum",
+      });
+    }
+  }
+
+  for (const crossRiskItem of scanResult.crossModuleRisks || []) {
+    slides.push({
+      id: `cross-${crossRiskItem.id}`,
+      title: crossRiskItem.title,
+      severity: crossRiskItem.severity,
+      description:
+        crossRiskItem.modules?.length > 0
+          ? `${crossRiskItem.description}\n\nAffected modules: ${crossRiskItem.modules.join(
+              ", "
+            )}`
+          : crossRiskItem.description,
+      recommendation: crossRiskItem.recommendation,
+      kind: "cross-module",
+    });
+  }
+
+  if (slides.length === 1 && scanResult.overallRisk === "None") {
+    slides.push({
+      id: "clean-result-slide",
+      title: "No Obvious Issues Found",
+      severity: "None",
+      description:
+        "This scan did not find obvious rule-based issues in the submitted code.",
+      recommendation:
+        "You can still review manually, but this result looks clean from the current scanner rules.",
+      kind: "summary",
+    });
+  }
+
+  return slides;
+}
+
+function getReportButtonState(
+  hasScanned: boolean,
+  scanResult: SystemScanResult | null,
+  error: string
+) {
+  if (error || !hasScanned || !scanResult) {
+    return {
+      label: "Full Report",
+      disabled: true,
+      className:
+        "border-white/10 bg-white/[0.04] text-zinc-500 cursor-not-allowed",
+    };
+  }
+
+  return {
+    label: "Full Report",
+    disabled: false,
+    className: "border-white bg-white text-black hover:bg-zinc-200",
+  };
+}
+
+function SectionCard({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-white/10 bg-[#0d0d0d]">
+      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <h2 className="text-sm font-medium tracking-wide text-white">{title}</h2>
+        {action}
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
+
+function Label({ children }: { children: ReactNode }) {
+  return (
+    <label className="mb-2 block text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+      {children}
+    </label>
+  );
+}
+
+function FieldInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      className={`h-11 w-full rounded-xl border border-white/10 bg-black px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-white ${
+        props.className || ""
+      }`}
+    />
+  );
+}
+
+function FieldTextarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      {...props}
+      className={`w-full rounded-xl border border-white/10 bg-black px-3 py-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-white ${
+        props.className || ""
+      }`}
+    />
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  disabled,
+  variant = "secondary",
+  type = "button",
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  variant?: "primary" | "secondary" | "ghost";
+  type?: "button" | "submit" | "reset";
+}) {
+  const styles = {
+    primary: "border-white bg-white text-black hover:bg-zinc-200",
+    secondary: "border-white/10 bg-white/[0.05] text-white hover:bg-white/[0.10]",
+    ghost: "border-white/10 bg-black text-zinc-300 hover:bg-white/[0.04]",
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex h-11 items-center justify-center rounded-xl border px-4 text-sm font-medium transition ${styles[variant]} disabled:cursor-not-allowed disabled:opacity-40`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function ScannerForm() {
@@ -91,18 +329,24 @@ export default function ScannerForm() {
   const [aiError, setAiError] = useState("");
   const [history, setHistory] = useState<ScanHistoryItem[]>([]);
   const [result, setResult] = useState<SystemScanResult | null>(null);
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [saveFileName, setSaveFileName] = useState("quantum-risk-report");
 
   const touchpoints = useMemo(
     () => parseTouchpoints(touchpointsText),
     [touchpointsText]
   );
 
+  const reportSlides = useMemo(() => buildReportSlides(result), [result]);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
+
       if (!raw) return;
 
       const parsed = JSON.parse(raw) as ScanHistoryItem[];
+
       if (Array.isArray(parsed)) {
         setHistory(parsed);
       }
@@ -117,8 +361,11 @@ export default function ScannerForm() {
   }
 
   function saveHistoryItem(item: ScanHistoryItem) {
-    const updated = [item, ...history].slice(0, 10);
-    saveHistoryList(updated);
+    setHistory((current) => {
+      const updated = [item, ...current].slice(0, 10);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
   }
 
   function resetReport() {
@@ -127,14 +374,18 @@ export default function ScannerForm() {
     setError("");
     setAiExplanation("");
     setAiError("");
+    setIsReportOpen(false);
   }
 
   function updateModule(id: string, field: "name" | "code", value: string) {
     setModules((current) =>
-      current.map((module) =>
-        (module.id ?? "") === id ? { ...module, [field]: value } : module
+      current.map((moduleItem) =>
+        (moduleItem.id ?? "") === id
+          ? { ...moduleItem, [field]: value }
+          : moduleItem
       )
     );
+
     resetReport();
   }
 
@@ -145,9 +396,10 @@ export default function ScannerForm() {
 
   function removeModule(id: string) {
     setModules((current) => {
-      const next = current.filter((module) => (module.id ?? "") !== id);
+      const next = current.filter((moduleItem) => (moduleItem.id ?? "") !== id);
       return next.length > 0 ? next : [createEmptyModule(1)];
     });
+
     resetReport();
   }
 
@@ -156,6 +408,7 @@ export default function ScannerForm() {
     setArchitectureNotes("");
     setTouchpointsText("");
     setModules([createEmptyModule(1)]);
+    setSaveFileName("quantum-risk-report");
     resetReport();
   }
 
@@ -170,6 +423,7 @@ export default function ScannerForm() {
         code: vulnerableSampleContract,
       },
     ]);
+    setSaveFileName("single-contract-report");
     resetReport();
   }
 
@@ -191,6 +445,7 @@ export default function ScannerForm() {
         code: saferSampleContract,
       },
     ]);
+    setSaveFileName("treasury-relay-report");
     resetReport();
   }
 
@@ -199,15 +454,16 @@ export default function ScannerForm() {
     setError("");
     setAiError("");
     setAiExplanation("");
+    setIsReportOpen(false);
 
     const cleanedModules = modules
-      .map((module, index) => ({
-        ...module,
-        id: module.id?.trim() || `module-${index + 1}`,
-        name: module.name.trim() || "Unnamed Module",
-        code: module.code,
+      .map((moduleItem, index) => ({
+        ...moduleItem,
+        id: moduleItem.id?.trim() || `module-${index + 1}`,
+        name: moduleItem.name.trim() || "Unnamed Module",
+        code: moduleItem.code,
       }))
-      .filter((module) => module.code.trim().length > 0);
+      .filter((moduleItem) => moduleItem.code.trim().length > 0);
 
     if (cleanedModules.length === 0) {
       setResult(null);
@@ -231,13 +487,20 @@ export default function ScannerForm() {
         }),
       });
 
-      const data = (await response.json()) as SystemScanResult | { error?: string };
+      const data = (await response.json()) as
+        | SystemScanResult
+        | { error?: string };
 
       if (!response.ok) {
-        throw new Error("error" in data ? data.error || "Scan failed." : "Scan failed.");
+        throw new Error(
+          "error" in data ? data.error || "Scan failed." : "Scan failed."
+        );
       }
 
-      setResult(data as SystemScanResult);
+      const scanResult = data as SystemScanResult;
+
+      setResult(scanResult);
+      setSaveFileName(slugifyFileName(systemName));
 
       const historyItem: ScanHistoryItem = {
         id: `${Date.now()}`,
@@ -246,7 +509,7 @@ export default function ScannerForm() {
         architectureNotes,
         touchpoints,
         modules: cleanedModules,
-        result: data as SystemScanResult,
+        result: scanResult,
         aiExplanation: "",
       };
 
@@ -264,12 +527,12 @@ export default function ScannerForm() {
     setAiExplanation("");
 
     const cleanedModules = modules
-      .map((module, index) => ({
-        ...module,
-        id: module.id?.trim() || `module-${index + 1}`,
-        name: module.name.trim() || "Unnamed Module",
+      .map((moduleItem, index) => ({
+        ...moduleItem,
+        id: moduleItem.id?.trim() || `module-${index + 1}`,
+        name: moduleItem.name.trim() || "Unnamed Module",
       }))
-      .filter((module) => module.code.trim());
+      .filter((moduleItem) => moduleItem.code.trim());
 
     if (cleanedModules.length === 0) {
       setAiError("Add module code first.");
@@ -301,7 +564,10 @@ export default function ScannerForm() {
         }),
       });
 
-      const data = (await response.json()) as { explanation?: string; error?: string };
+      const data = (await response.json()) as {
+        explanation?: string;
+        error?: string;
+      };
 
       if (!response.ok) {
         throw new Error(data?.error || "AI explanation failed.");
@@ -341,6 +607,8 @@ export default function ScannerForm() {
     setAiError("");
     setError("");
     setHasScanned(true);
+    setSaveFileName(slugifyFileName(item.systemName));
+    setIsReportOpen(false);
   }
 
   function handleDeleteHistoryItem(id: string) {
@@ -353,642 +621,594 @@ export default function ScannerForm() {
     localStorage.removeItem(STORAGE_KEY);
   }
 
+  function handleSaveReport() {
+    if (!result) return;
+
+    const safeName =
+      saveFileName.trim().replace(/[^a-zA-Z0-9-_]/g, "-") ||
+      "quantum-risk-report";
+
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      fileName: safeName,
+      systemName,
+      architectureNotes,
+      touchpoints,
+      modules,
+      result,
+      aiExplanation,
+      slides: reportSlides,
+    };
+
+    downloadTextFile(`${safeName}.json`, JSON.stringify(payload, null, 2));
+  }
+
   const moduleResults: ModuleScanResult[] = result?.moduleResults || [];
   const crossModuleRisks: CrossModuleRisk[] = result?.crossModuleRisks || [];
+  const reportButton = getReportButtonState(hasScanned, result, error);
 
   return (
-    <section className="grid gap-6 lg:grid-cols-3">
-      <div className="lg:col-span-2 rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-lg">
-        <div className="grid gap-4">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-300">
-              System Name
-            </label>
-            <input
-              value={systemName}
-              onChange={(e) => {
-                setSystemName(e.target.value);
-                resetReport();
-              }}
-              placeholder="My blockchain system"
-              className="w-full rounded-xl border border-zinc-800 bg-black p-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-300">
-              Architecture Notes
-            </label>
-            <textarea
-              value={architectureNotes}
-              onChange={(e) => {
-                setArchitectureNotes(e.target.value);
-                resetReport();
-              }}
-              placeholder="Describe how the modules connect."
-              className="min-h-[100px] w-full rounded-xl border border-zinc-800 bg-black p-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-300">
-              System Touchpoints
-            </label>
-            <textarea
-              value={touchpointsText}
-              onChange={(e) => {
-                setTouchpointsText(e.target.value);
-                resetReport();
-              }}
-              placeholder={`bridge\noracle\nrelayer`}
-              className="min-h-[100px] w-full rounded-xl border border-zinc-800 bg-black p-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
-            />
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={handleLoadSingleSample}
-            className="rounded-xl border border-zinc-700 bg-black px-4 py-2 text-sm font-medium text-white hover:border-zinc-500"
-          >
-            Load Single Sample
-          </button>
-
-          <button
-            type="button"
-            onClick={handleLoadSystemSample}
-            className="rounded-xl border border-zinc-700 bg-black px-4 py-2 text-sm font-medium text-white hover:border-zinc-500"
-          >
-            Load Multi-Module Sample
-          </button>
-
-          <button
-            type="button"
-            onClick={handleClear}
-            className="rounded-xl border border-zinc-700 bg-black px-4 py-2 text-sm font-medium text-white hover:border-zinc-500"
-          >
-            Clear
-          </button>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">System Modules</h3>
-
-            <button
-              type="button"
-              onClick={addModule}
-              className="rounded-xl border border-zinc-700 bg-black px-4 py-2 text-sm font-medium text-white hover:border-zinc-500"
-            >
-              Add Module
-            </button>
-          </div>
-
-          {modules.map((module, index) => {
-            const moduleId = module.id ?? `module-${index + 1}`;
-
-            return (
-              <div
-                key={moduleId}
-                className="rounded-2xl border border-zinc-800 bg-black p-4"
-              >
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <input
-                    value={module.name}
-                    onChange={(e) =>
-                      updateModule(moduleId, "name", e.target.value)
-                    }
-                    placeholder={`Module ${index + 1}`}
-                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => removeModule(moduleId)}
-                    disabled={modules.length === 1}
-                    className="rounded-xl border border-red-800 bg-red-950/20 px-4 py-3 text-sm font-medium text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Remove
-                  </button>
-                </div>
-
-                <textarea
-                  value={module.code}
-                  onChange={(e) =>
-                    updateModule(moduleId, "code", e.target.value)
-                  }
-                  placeholder={`Paste Solidity code for ${
-                    module.name || `Module ${index + 1}`
-                  }...`}
-                  className="min-h-[260px] w-full rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-600"
-                />
+    <>
+      <section className="min-h-screen w-full bg-black text-white">
+        <div className="w-full px-3 py-3 sm:px-4 lg:px-6 2xl:px-8">
+          <div className="mb-4 rounded-2xl border border-white/10 bg-[#0b0b0b] px-4 py-4">
+            <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">
+                  Quantum Risk Copilot
+                </p>
+                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                  Full System Scanner
+                </h1>
+                <p className="mt-2 max-w-4xl text-sm text-zinc-400">
+                  Paste smart contracts, scan the whole system, and review the report cleanly.
+                </p>
               </div>
-            );
-          })}
-        </div>
 
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={handleScan}
-            disabled={isLoading}
-            className="inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isLoading ? "Scanning..." : "Scan System"}
-          </button>
+              <div className="grid w-full gap-2 sm:grid-cols-2 xl:grid-cols-5 2xl:max-w-[980px]">
+                <ActionButton
+                  onClick={handleScan}
+                  disabled={isLoading}
+                  variant="primary"
+                >
+                  {isLoading ? "Scanning..." : "Quick Scan"}
+                </ActionButton>
 
-          <button
-            type="button"
-            onClick={handleExplainWithAI}
-            disabled={isExplaining || !hasScanned || !result}
-            className="inline-flex items-center justify-center rounded-xl border border-zinc-700 bg-black px-5 py-3 text-sm font-semibold text-white transition hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isExplaining ? "Explaining..." : "Explain with AI"}
-          </button>
-        </div>
+                <button
+                  type="button"
+                  onClick={() => setIsReportOpen(true)}
+                  disabled={reportButton.disabled}
+                  className={`inline-flex h-11 items-center justify-center rounded-xl border px-4 text-sm font-medium transition ${reportButton.className}`}
+                >
+                  {reportButton.label}
+                </button>
 
-        <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-lg">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">Previous Scans</h3>
+                <ActionButton
+                  onClick={handleExplainWithAI}
+                  disabled={isExplaining || !hasScanned || !result}
+                  variant="secondary"
+                >
+                  {isExplaining ? "Explaining..." : "Explain with API"}
+                </ActionButton>
 
-            {history.length > 0 && (
-              <button
-                type="button"
-                onClick={handleClearHistory}
-                className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-xs font-medium text-white hover:border-zinc-500"
-              >
-                Clear History
-              </button>
-            )}
+                <ActionButton onClick={handleLoadSingleSample} variant="ghost">
+                  Load Single Sample
+                </ActionButton>
+
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 xl:grid-cols-2">
+                  <ActionButton onClick={handleLoadSystemSample} variant="ghost">
+                    Load Multi
+                  </ActionButton>
+                  <ActionButton onClick={handleClear} variant="ghost">
+                    Clear
+                  </ActionButton>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {history.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-zinc-700 bg-black/40 p-4 text-sm text-zinc-400">
-              No previous scans yet.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {history.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl border border-zinc-800 bg-black p-4"
-                >
-                  <button
-                    type="button"
-                    onClick={() => handleLoadFromHistory(item)}
-                    className="block w-full text-left"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-white">
-                          {item.systemName}
+          <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.9fr)_420px]">
+            <div className="space-y-4 min-w-0">
+              <SectionCard
+                title="System Modules"
+                action={
+                  <ActionButton onClick={addModule} variant="secondary">
+                    Add Module
+                  </ActionButton>
+                }
+              >
+                <div className="grid gap-4 md:grid-cols-2">
+                  {modules.map((moduleItem, index) => {
+                    const moduleId = moduleItem.id ?? `module-${index + 1}`;
+
+                    return (
+                      <div
+                        key={moduleId}
+                        className="flex min-h-[600px] min-w-0 flex-col rounded-2xl border border-white/10 bg-black"
+                      >
+                        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-3">
+                          <FieldInput
+                            value={moduleItem.name}
+                            onChange={(event) =>
+                              updateModule(moduleId, "name", event.target.value)
+                            }
+                            placeholder={`Module ${index + 1}`}
+                            className="h-10 min-w-0"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => removeModule(moduleId)}
+                            disabled={modules.length === 1}
+                            className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs font-medium text-zinc-300 transition hover:bg-white/[0.10] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Remove
+                          </button>
+                        </div>
+
+                        <div className="flex-1 p-3">
+                          <FieldTextarea
+                            value={moduleItem.code}
+                            onChange={(event) =>
+                              updateModule(moduleId, "code", event.target.value)
+                            }
+                            placeholder={`Paste Solidity code for ${
+                              moduleItem.name || `Module ${index + 1}`
+                            }...`}
+                            className="h-full min-h-[510px] resize-none font-mono text-[13px] leading-6"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </SectionCard>
+
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <SectionCard title="System Details">
+                  <div className="space-y-4">
+                    <div>
+                      <Label>System Name</Label>
+                      <FieldInput
+                        value={systemName}
+                        onChange={(event) => {
+                          setSystemName(event.target.value);
+                          resetReport();
+                        }}
+                        placeholder="My blockchain system"
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Architecture Notes</Label>
+                      <FieldTextarea
+                        value={architectureNotes}
+                        onChange={(event) => {
+                          setArchitectureNotes(event.target.value);
+                          resetReport();
+                        }}
+                        placeholder="Describe how the modules connect."
+                        className="min-h-[150px] resize-y"
+                      />
+                    </div>
+                  </div>
+                </SectionCard>
+
+                <SectionCard title="Touchpoints">
+                  <div>
+                    <Label>System Touchpoints</Label>
+                    <FieldTextarea
+                      value={touchpointsText}
+                      onChange={(event) => {
+                        setTouchpointsText(event.target.value);
+                        resetReport();
+                      }}
+                      placeholder={`bridge\noracle\nrelayer`}
+                      className="min-h-[150px] resize-y"
+                    />
+                  </div>
+                </SectionCard>
+              </div>
+
+              {(error || aiError || aiExplanation) && (
+                <div className="space-y-4">
+                  {error && (
+                    <div className="rounded-2xl border border-white/15 bg-white/[0.04] p-4 text-sm text-zinc-200">
+                      {error}
+                    </div>
+                  )}
+
+                  {aiError && (
+                    <div className="rounded-2xl border border-white/15 bg-white/[0.04] p-4 text-sm text-zinc-200">
+                      {aiError}
+                    </div>
+                  )}
+
+                  {aiExplanation && (
+                    <SectionCard title="AI Explanation">
+                      <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-zinc-300">
+                        {aiExplanation}
+                      </pre>
+                    </SectionCard>
+                  )}
+                </div>
+              )}
+
+              {result && (
+                <SectionCard title="Scan View">
+                  <div className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          Score
                         </p>
-                        <p className="mt-1 text-xs text-zinc-400">
-                          {new Date(item.savedAt).toLocaleString()}
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {result.score}
                         </p>
                       </div>
 
                       <div
-                        className={`rounded-lg border px-2 py-1 text-xs font-semibold ${getRiskClasses(
-                          item.result.overallRisk
+                        className={`rounded-xl border p-4 ${getStatusClasses(
+                          result.status
                         )}`}
                       >
-                        {item.result.overallRisk}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 sm:grid-cols-4">
-                      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-2">
-                        <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-                          Score
-                        </p>
-                        <p className="mt-1 text-sm font-bold text-white">
-                          {item.result.score}/100
-                        </p>
-                      </div>
-
-                      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-2">
-                        <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-                          Modules
-                        </p>
-                        <p className="mt-1 text-sm font-bold text-white">
-                          {item.result.modulesScanned || item.modules.length}
-                        </p>
-                      </div>
-
-                      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-2">
-                        <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-                          Issues
-                        </p>
-                        <p className="mt-1 text-sm font-bold text-white">
-                          {item.result.issues.length}
-                        </p>
-                      </div>
-
-                      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-2">
-                        <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                        <p className="text-[11px] uppercase tracking-[0.18em]">
                           Status
                         </p>
-                        <p className="mt-1 text-sm font-bold text-white">
-                          {item.result.status}
+                        <p className="mt-2 text-lg font-semibold">
+                          {result.status}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          Modules
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {result.modulesScanned || moduleResults.length}
+                        </p>
+                      </div>
+
+                      <div
+                        className={`rounded-xl border p-4 ${getRiskClasses(
+                          result.overallRisk
+                        )}`}
+                      >
+                        <p className="text-[11px] uppercase tracking-[0.18em]">
+                          Overall Risk
+                        </p>
+                        <p className="mt-2 text-lg font-semibold">
+                          {result.overallRisk}
                         </p>
                       </div>
                     </div>
 
-                    <p className="mt-3 text-xs text-zinc-400">
-                      {item.result.systemSummary ||
-                        item.result.summary ||
-                        "No summary."}
-                    </p>
-                  </button>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          High
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {result.counts.high}
+                        </p>
+                      </div>
 
-                  <div className="mt-3 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteHistoryItem(item.id)}
-                      className="rounded-lg border border-red-800 bg-red-950/20 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-950/40"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          Medium
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {result.counts.medium}
+                        </p>
+                      </div>
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-lg">
-        <h2 className="mb-4 text-xl font-semibold text-white">
-          System Scan Report
-        </h2>
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          Low
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {result.counts.low}
+                        </p>
+                      </div>
+                    </div>
 
-        {!hasScanned ? (
-          <div className="rounded-xl border border-dashed border-zinc-700 bg-black/40 p-6 text-sm text-zinc-400">
-            No scan yet. Add modules and click{" "}
-            <span className="text-white">Scan System</span>.
-          </div>
-        ) : error ? (
-          <div className="rounded-xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-300">
-            {error}
-          </div>
-        ) : !result ? (
-          <div className="rounded-xl border border-yellow-700 bg-yellow-950/30 p-4 text-sm text-yellow-300">
-            No result returned.
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-xl border border-zinc-800 bg-black p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  System Summary
-                </p>
-                <p className="mt-2 text-sm text-zinc-300">
-                  {result.systemSummary || result.summary}
-                </p>
-              </div>
+                    <div className="rounded-xl border border-white/10 bg-black p-4">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                        Summary
+                      </p>
+                      <p className="mt-3 text-sm leading-7 text-zinc-300">
+                        {result.systemSummary || result.summary}
+                      </p>
+                    </div>
 
-              <div
-                className={`rounded-xl border p-4 ${getRiskClasses(
-                  result.overallRisk
-                )}`}
-              >
-                <p className="text-xs font-semibold uppercase tracking-wide">
-                  Overall Risk
-                </p>
-                <p className="mt-2 text-lg font-bold">{result.overallRisk}</p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-4">
-              <div className="rounded-xl border border-zinc-800 bg-black p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Score
-                </p>
-                <p className="mt-2 text-3xl font-bold text-white">
-                  {result.score}/100
-                </p>
-              </div>
-
-              <div
-                className={`rounded-xl border p-4 ${getStatusClasses(
-                  result.status
-                )}`}
-              >
-                <p className="text-xs font-semibold uppercase tracking-wide">
-                  Status
-                </p>
-                <p className="mt-2 text-lg font-bold">{result.status}</p>
-              </div>
-
-              <div className="rounded-xl border border-zinc-800 bg-black p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Modules
-                </p>
-                <p className="mt-2 text-lg font-bold text-white">
-                  {result.modulesScanned || moduleResults.length}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-zinc-800 bg-black p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Cross-Module Risks
-                </p>
-                <p className="mt-2 text-lg font-bold text-white">
-                  {crossModuleRisks.length}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-red-900 bg-red-950/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-red-400">
-                  High
-                </p>
-                <p className="mt-2 text-2xl font-bold text-red-300">
-                  {result.counts.high}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-yellow-900 bg-yellow-950/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-yellow-400">
-                  Medium
-                </p>
-                <p className="mt-2 text-2xl font-bold text-yellow-300">
-                  {result.counts.medium}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-blue-900 bg-blue-950/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-400">
-                  Low
-                </p>
-                <p className="mt-2 text-2xl font-bold text-blue-300">
-                  {result.counts.low}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-red-900 bg-red-950/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-red-400">
-                  Quantum High
-                </p>
-                <p className="mt-2 text-2xl font-bold text-red-300">
-                  {result.quantumCounts.high}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-yellow-900 bg-yellow-950/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-yellow-400">
-                  Quantum Medium
-                </p>
-                <p className="mt-2 text-2xl font-bold text-yellow-300">
-                  {result.quantumCounts.medium}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-blue-900 bg-blue-950/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-400">
-                  Quantum Low
-                </p>
-                <p className="mt-2 text-2xl font-bold text-blue-300">
-                  {result.quantumCounts.low}
-                </p>
-              </div>
-            </div>
-
-            {touchpoints.length > 0 && (
-              <div className="rounded-xl border border-zinc-800 bg-black p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Touchpoints
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {touchpoints.map((item) => (
-                    <span
-                      key={item}
-                      className="rounded-full border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-zinc-300"
-                    >
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {result.tips.length > 0 && (
-              <div className="rounded-xl border border-zinc-800 bg-black p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Scan Tips
-                </p>
-                <div className="mt-3 space-y-2">
-                  {result.tips.map((tip, index) => (
-                    <p key={index} className="text-sm text-zinc-300">
-                      • {tip}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {crossModuleRisks.length > 0 && (
-              <div className="rounded-xl border border-purple-800 bg-purple-950/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-purple-300">
-                  Cross-Module Risks
-                </p>
-
-                <div className="mt-3 space-y-3">
-                  {crossModuleRisks.map((risk) => (
-                    <div
-                      key={risk.id}
-                      className="rounded-xl border border-zinc-800 bg-black p-4"
-                    >
-                      <ReportCard
-                        title={risk.title}
-                        severity={risk.severity}
-                        description={risk.description}
-                        recommendation={risk.recommendation}
-                      />
-
-                      {risk.modules.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {risk.modules.map((module) => (
-                            <span
-                              key={module}
-                              className="rounded-full border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-zinc-300"
+                    {result.tips?.length > 0 && (
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          Tips
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {result.tips.map((tipItem, index) => (
+                            <p
+                              key={`${tipItem}-${index}`}
+                              className="text-sm leading-7 text-zinc-300"
                             >
-                              {module}
+                              • {tipItem}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {moduleResults.length > 0 && (
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          Module Results
+                        </p>
+
+                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                          {moduleResults.map((moduleItem) => (
+                            <div
+                              key={moduleItem.moduleId}
+                              className="rounded-xl border border-white/10 bg-[#080808] p-4"
+                            >
+                              <div className="mb-3 flex items-center justify-between gap-3">
+                                <p className="text-sm font-medium text-white">
+                                  {moduleItem.moduleName}
+                                </p>
+                                <span
+                                  className={`rounded-lg border px-2 py-1 text-[11px] font-medium ${getRiskClasses(
+                                    moduleItem.overallRisk
+                                  )}`}
+                                >
+                                  {moduleItem.overallRisk}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="rounded-lg border border-white/10 bg-black p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                                    High
+                                  </p>
+                                  <p className="mt-2 text-lg font-semibold text-white">
+                                    {moduleItem.counts.high}
+                                  </p>
+                                </div>
+
+                                <div className="rounded-lg border border-white/10 bg-black p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                                    Medium
+                                  </p>
+                                  <p className="mt-2 text-lg font-semibold text-white">
+                                    {moduleItem.counts.medium}
+                                  </p>
+                                </div>
+
+                                <div className="rounded-lg border border-white/10 bg-black p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                                    Low
+                                  </p>
+                                  <p className="mt-2 text-lg font-semibold text-white">
+                                    {moduleItem.counts.low}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {crossModuleRisks.length > 0 && (
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          Cross-Module Risks
+                        </p>
+                        <div className="mt-3 space-y-3">
+                          {crossModuleRisks.map((risk) => (
+                            <div
+                              key={risk.id}
+                              className="rounded-xl border border-white/10 bg-[#080808] p-4"
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-medium text-white">
+                                  {risk.title}
+                                </p>
+                                <span
+                                  className={`rounded-lg border px-2 py-1 text-[11px] font-medium ${getRiskClasses(
+                                    risk.severity
+                                  )}`}
+                                >
+                                  {risk.severity}
+                                </span>
+                              </div>
+                              <p className="mt-2 text-sm leading-7 text-zinc-300">
+                                {risk.description}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </SectionCard>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <SectionCard title="Live Summary">
+                {!hasScanned ? (
+                  <div className="rounded-xl border border-dashed border-white/10 bg-black p-5 text-sm text-zinc-500">
+                    Scan something first.
+                  </div>
+                ) : !result ? (
+                  <div className="rounded-xl border border-white/10 bg-black p-5 text-sm text-zinc-400">
+                    No result returned.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          Score
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold text-white">
+                          {result.score}
+                        </p>
+                      </div>
+
+                      <div
+                        className={`rounded-xl border p-4 ${getRiskClasses(
+                          result.overallRisk
+                        )}`}
+                      >
+                        <p className="text-[11px] uppercase tracking-[0.18em]">
+                          Risk
+                        </p>
+                        <p className="mt-2 text-lg font-semibold">
+                          {result.overallRisk}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-black p-4">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                        Summary
+                      </p>
+                      <p className="mt-3 text-sm leading-7 text-zinc-300">
+                        {result.systemSummary || result.summary}
+                      </p>
+                    </div>
+
+                    {touchpoints.length > 0 && (
+                      <div className="rounded-xl border border-white/10 bg-black p-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                          Touchpoints
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {touchpoints.map((touchpointItem) => (
+                            <span
+                              key={touchpointItem}
+                              className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs text-zinc-300"
+                            >
+                              {touchpointItem}
                             </span>
                           ))}
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {aiError && (
-              <div className="rounded-xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-300">
-                {aiError}
-              </div>
-            )}
-
-            {aiExplanation && (
-              <div className="rounded-xl border border-purple-800 bg-purple-950/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-purple-300">
-                  AI Explanation
-                </p>
-                <pre className="mt-3 whitespace-pre-wrap break-words text-sm text-zinc-200">
-                  {aiExplanation}
-                </pre>
-              </div>
-            )}
-
-            {moduleResults.length > 0 ? (
-              <div className="space-y-4">
-                {moduleResults.map((module) => (
-                  <div
-                    key={module.moduleId}
-                    className="rounded-xl border border-zinc-800 bg-black p-4"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-lg font-semibold text-white">
-                          {module.moduleName}
-                        </p>
-                        <p className="mt-1 text-sm text-zinc-400">
-                          {module.contractType}
-                        </p>
-                      </div>
-
-                      <div
-                        className={`rounded-lg border px-3 py-2 text-sm font-semibold ${getRiskClasses(
-                          module.overallRisk
-                        )}`}
-                      >
-                        {module.overallRisk}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-                          Score
-                        </p>
-                        <p className="mt-1 text-sm font-bold text-white">
-                          {module.score}/100
-                        </p>
-                      </div>
-
-                      <div
-                        className={`rounded-lg border p-3 ${getStatusClasses(
-                          module.status
-                        )}`}
-                      >
-                        <p className="text-[11px] uppercase tracking-wide">
-                          Status
-                        </p>
-                        <p className="mt-1 text-sm font-bold">
-                          {module.status}
-                        </p>
-                      </div>
-
-                      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-                          Issues
-                        </p>
-                        <p className="mt-1 text-sm font-bold text-white">
-                          {module.issues.length}
-                        </p>
-                      </div>
-
-                      <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-                          Quantum Risks
-                        </p>
-                        <p className="mt-1 text-sm font-bold text-white">
-                          {module.quantumRisks.length}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                        Module Summary
-                      </p>
-                      <p className="mt-2 text-sm text-zinc-300">
-                        {module.summary}
-                      </p>
-                    </div>
-
-                    {module.quantumRisks.length > 0 && (
-                      <div className="mt-4 space-y-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-purple-300">
-                          Quantum Risks
-                        </p>
-
-                        {module.quantumRisks.map((risk) => (
-                          <ReportCard
-                            key={risk.id}
-                            title={risk.title}
-                            severity={risk.severity}
-                            description={risk.description}
-                            recommendation={risk.recommendation}
-                            line={risk.line}
-                            snippet={risk.snippet}
-                          />
-                        ))}
-                      </div>
-                    )}
-
-                    {module.issues.length > 0 ? (
-                      <div className="mt-4 space-y-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                          Findings
-                        </p>
-
-                        {module.issues.map((issue: ScanIssue) => (
-                          <ReportCard
-                            key={issue.id}
-                            title={issue.title}
-                            severity={issue.severity}
-                            description={issue.description}
-                            recommendation={issue.recommendation}
-                            line={issue.line}
-                            snippet={issue.snippet}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-4 rounded-xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
-                        No obvious module-level issues found.
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-            ) : result.issues.length > 0 ? (
-              result.issues.map((issue: ScanIssue) => (
-                <ReportCard
-                  key={issue.id}
-                  title={issue.title}
-                  severity={issue.severity}
-                  description={issue.description}
-                  recommendation={issue.recommendation}
-                  line={issue.line}
-                  snippet={issue.snippet}
-                />
-              ))
-            ) : (
-              <div className="rounded-xl border border-green-800 bg-green-950/20 p-4 text-sm text-green-300">
-                No obvious issues were found.
-              </div>
-            )}
+                )}
+              </SectionCard>
+
+              <SectionCard
+                title="Previous Scans"
+                action={
+                  history.length > 0 ? (
+                    <ActionButton onClick={handleClearHistory} variant="ghost">
+                      Clear
+                    </ActionButton>
+                  ) : undefined
+                }
+              >
+                {history.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-white/10 bg-black p-4 text-sm text-zinc-500">
+                    No previous scans yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {history.map((item) => (
+                      <div
+                        key={item.id}
+                        className="rounded-xl border border-white/10 bg-black p-4"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleLoadFromHistory(item)}
+                          className="block w-full text-left"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-white">
+                                {item.systemName}
+                              </p>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                {new Date(item.savedAt).toLocaleString()}
+                              </p>
+                            </div>
+
+                            <div
+                              className={`shrink-0 rounded-lg border px-2 py-1 text-[11px] font-medium ${getRiskClasses(
+                                item.result.overallRisk
+                              )}`}
+                            >
+                              {item.result.overallRisk}
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-3 gap-2">
+                            <div className="rounded-lg border border-white/10 bg-[#070707] p-3">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                                Score
+                              </p>
+                              <p className="mt-2 text-sm font-semibold text-white">
+                                {item.result.score}
+                              </p>
+                            </div>
+
+                            <div className="rounded-lg border border-white/10 bg-[#070707] p-3">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                                Modules
+                              </p>
+                              <p className="mt-2 text-sm font-semibold text-white">
+                                {item.result.modulesScanned || item.modules.length}
+                              </p>
+                            </div>
+
+                            <div className="rounded-lg border border-white/10 bg-[#070707] p-3">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                                Issues
+                              </p>
+                              <p className="mt-2 text-sm font-semibold text-white">
+                                {item.result.issues.length}
+                              </p>
+                            </div>
+                          </div>
+
+                          <p className="mt-3 text-xs leading-6 text-zinc-500">
+                            {item.result.systemSummary ||
+                              item.result.summary ||
+                              "No summary."}
+                          </p>
+                        </button>
+
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteHistoryItem(item.id)}
+                            className="inline-flex h-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-medium text-zinc-300 transition hover:bg-white/[0.10]"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </SectionCard>
+            </div>
           </div>
-        )}
-      </div>
-    </section>
+        </div>
+      </section>
+
+      <FullReportModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        slides={reportSlides}
+        systemName={systemName}
+        fileName={saveFileName}
+        onFileNameChange={setSaveFileName}
+        onSave={handleSaveReport}
+      />
+    </>
   );
 }
