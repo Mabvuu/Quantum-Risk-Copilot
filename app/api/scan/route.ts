@@ -18,7 +18,6 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const code = body?.code;
     const modules = body?.modules;
     const systemName =
       typeof body?.systemName === "string" ? body.systemName : "";
@@ -32,16 +31,11 @@ export async function POST(request: Request) {
         )
       : [];
 
-    if (typeof code === "string") {
-      const result = scanSmartContract(code);
-      return NextResponse.json(result);
-    }
-
     if (!isValidModuleArray(modules)) {
       return NextResponse.json(
         {
           error:
-            "Invalid scan input. Send either { code: string } or { modules: [{ name, code }] }.",
+            "Invalid scan input. Send { systemName?, architectureNotes?, touchpoints?, modules: [{ name, code }] }.",
         },
         { status: 400 }
       );

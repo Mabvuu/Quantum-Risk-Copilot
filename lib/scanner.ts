@@ -1,16 +1,19 @@
 import {
   CountBuckets,
-  CrossModuleRisk,
   ModuleScanResult,
   OverallRisk,
   ScanIssue,
-  ScanResult,
   ScanStatus,
   Severity,
   SystemScanInput,
   SystemScanResult,
 } from "@/types/report";
+
 import { scanQuantum } from "./quantumScanner";
+import { detectCryptoTouchpoints } from "./crypto-discovery";
+import { buildPqcMigrations } from "./pqc-migration";
+import { detectCrossModuleRisks } from "./quantum-risk";
+import { toSystemInput } from "./system-input";
 
 export type { SystemScanInput, SystemScanResult } from "@/types/report";
 
@@ -81,7 +84,11 @@ function extractFunctionBlocks(code: string): FunctionBlock[] {
   });
 }
 
-function scanSingleModule(code: string): ScanResult {
+function scanSingleModule(
+  code: string,
+  moduleId: string,
+  moduleName: string
+): ModuleScanResult {
   const issues: ScanIssue[] = [];
   const blocks = extractFunctionBlocks(code);
 
@@ -133,65 +140,40 @@ function scanSingleModule(code: string): ScanResult {
   });
 
   const quantum = scanQuantum(code);
-  const all = [...issues, ...quantum.risks];
+  const cryptoTouchpoints = detectCryptoTouchpoints(
+    code,
+    moduleId,
+    moduleName
+  );
+  const pqcMigrations = buildPqcMigrations(cryptoTouchpoints);
+  const all = [...issues, ...quantum.risks, ...cryptoTouchpoints];
   const score = getScore(all);
 
   return {
     issues: sortBySeverity(issues),
     quantumRisks: quantum.risks,
     summary:
-      issues.length === 0 && quantum.risks.length === 0
+      issues.length === 0 &&
+      quantum.risks.length === 0 &&
+      cryptoTouchpoints.length === 0
         ? "No major issues"
-        : "Issues detected",
+        : "Crypto touchpoints and risks detected",
     overallRisk: getOverallRisk(all),
     score,
     status: getStatus(score),
-    contractType: "Smart Contract",
-    tips: ["Review access control", "Avoid unsafe calls"],
+    contractType: "System Module",
+    tips: [
+      "Review cryptographic inventory",
+      "Prioritize classical public-key usage",
+      "Plan phased PQC migration",
+    ],
     counts: buildCounts(issues),
     quantumCounts: quantum.counts,
+    moduleId,
+    moduleName,
+    cryptoTouchpoints,
+    pqcMigrations,
   };
-}
-
-function detectCrossModuleRisks(
-  input: SystemScanInput
-): CrossModuleRisk[] {
-  const risks: CrossModuleRisk[] = [];
-
-  if (input.modules.length > 1) {
-    risks.push({
-      id: "multi-module-risk",
-      title: "Multiple module interaction risk",
-      severity: "Medium",
-      description: "Modules interacting increase attack surface",
-      recommendation: "Review trust boundaries",
-      modules: input.modules.map((m) => m.name),
-    });
-  }
-
-  if (input.touchpoints?.some((t) => /bridge|oracle|offchain/i.test(t))) {
-    risks.push({
-      id: "quantum-touchpoint",
-      title: "Quantum-sensitive touchpoint",
-      severity: "High",
-      description: "Off-chain + signatures = quantum risk",
-      recommendation: "Plan quantum-safe upgrade",
-      modules: input.modules.map((m) => m.name),
-    });
-  }
-
-  return risks;
-}
-
-function toSystemInput(input: string | SystemScanInput): SystemScanInput {
-  if (typeof input === "string") {
-    return {
-      systemName: "Single Contract",
-      modules: [{ name: "Main", code: input }],
-    };
-  }
-
-  return input;
 }
 
 export function scanSmartContract(
@@ -200,21 +182,19 @@ export function scanSmartContract(
   const system = toSystemInput(input);
 
   const moduleResults: ModuleScanResult[] = system.modules.map((m, i) => {
-    const res = scanSingleModule(m.code);
-
-    return {
-      ...res,
-      moduleId: m.id || `module-${i}`,
-      moduleName: m.name,
-    };
+    const moduleId = m.id || `module-${i + 1}`;
+    return scanSingleModule(m.code, moduleId, m.name);
   });
 
-  const cross = detectCrossModuleRisks(system);
+  const crossModuleRisks = detectCrossModuleRisks(system);
+  const cryptoTouchpoints = moduleResults.flatMap((m) => m.cryptoTouchpoints);
+  const pqcMigrations = moduleResults.flatMap((m) => m.pqcMigrations);
 
   const allSignals = [
     ...moduleResults.flatMap((m) => m.issues),
     ...moduleResults.flatMap((m) => m.quantumRisks),
-    ...cross,
+    ...cryptoTouchpoints,
+    ...crossModuleRisks,
   ];
 
   const score = getScore(allSignals);
@@ -226,16 +206,23 @@ export function scanSmartContract(
     overallRisk: getOverallRisk(allSignals),
     score,
     status: getStatus(score),
-    contractType: moduleResults.length > 1 ? "System" : "Smart Contract",
-    tips: ["Review system interactions"],
+    contractType: moduleResults.length > 1 ? "System" : "System Module",
+    tips: [
+      "Inventory all cryptographic usage",
+      "Prioritize RSA and ECC migration paths",
+      "Use hybrid rollout before full PQC replacement",
+    ],
     counts: buildCounts(moduleResults.flatMap((m) => m.issues)),
     quantumCounts: buildCounts(moduleResults.flatMap((m) => m.quantumRisks)),
     systemName: system.systemName || "System",
-    systemSummary: "Multi-module analysis complete",
+    systemSummary:
+      "Full-system crypto discovery complete with quantum-risk mapping and PQC migration guidance.",
     architectureNotes: system.architectureNotes || "",
     touchpoints: system.touchpoints || [],
     modulesScanned: moduleResults.length,
     moduleResults,
-    crossModuleRisks: cross,
+    crossModuleRisks,
+    cryptoTouchpoints,
+    pqcMigrations,
   };
 }

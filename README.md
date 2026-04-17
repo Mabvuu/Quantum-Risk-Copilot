@@ -1,92 +1,122 @@
 # Quantum Risk Copilot
 
-**AI-powered blockchain security copilot for system-level and quantum-risk analysis.**
+**AI-powered system-wide cryptography discovery, quantum-risk mapping, and post-quantum migration copilot.**
 
 ---
 
 ## Overview
 
-Quantum Risk Copilot is a security analysis engine designed to go beyond traditional smart contract scanners.
+Quantum Risk Copilot is a security analysis tool built to scan whole software systems, not just one smart contract.
 
-Instead of analyzing contracts in isolation, it evaluates **entire blockchain systems** — including multiple contracts, architecture design, and external trust dependencies — while also identifying **quantum-era cryptographic risks**.
+Instead of checking a single file in isolation, it reviews multiple modules together, looks for cryptographic touchpoints, highlights quantum-vulnerable usage, and suggests where post-quantum migration should begin.
 
-This project demonstrates the ability to build practical AI-assisted security tooling for real-world Web3 systems.
+The goal is to help teams understand **where cryptography lives in their system**, **what becomes risky in a quantum future**, and **what should be upgraded first**.
 
 ---
 
 ## Problem
 
-Most existing tools:
-- scan a single contract at a time
-- focus only on known vulnerabilities
-- ignore system-level interactions
-- do not account for future quantum threats
+Most security tools:
 
-Modern blockchain systems are:
-- multi-contract
-- interconnected
-- dependent on off-chain infrastructure (bridges, oracles, relayers)
+- scan one contract or file at a time
+- focus only on common code bugs
+- miss system-wide trust relationships
+- do not map cryptography across the full platform
+- do not prepare teams for post-quantum migration
 
-This creates blind spots in security analysis.
+But real systems are bigger than one file.
+
+Modern platforms often include:
+
+- smart contracts
+- wallets
+- APIs
+- auth flows
+- relayers
+- bridges
+- oracles
+- encrypted storage
+- backend services
+
+That means security risk is not only in code mistakes. It is also in how cryptography is used across the whole system.
 
 ---
 
 ## Solution
 
-Quantum Risk Copilot introduces a **system-aware security model** that:
+Quantum Risk Copilot uses a **system-aware quantum-risk model** that:
 
-- analyzes multiple contracts together
-- detects vulnerabilities across modules
-- identifies risky architecture patterns
-- flags cryptographic dependencies vulnerable to quantum computing
-- provides structured reports and AI-assisted explanations
+- scans multiple modules together
+- discovers cryptographic usage across the system
+- identifies quantum-sensitive algorithms and trust paths
+- highlights cross-module and off-chain risk areas
+- suggests post-quantum migration actions
+- returns structured results for developers and security teams
 
 ---
 
 ## Key Features
 
-### System-Level Scanning
-Analyzes multiple modules as a single system instead of isolated contracts.
+### Full-System Scanning
 
-### Quantum Risk Detection
-Detects cryptographic weaknesses such as:
-- ECDSA dependence
-- signature-based authentication risks
-- hash-based security assumptions
+Analyzes multiple modules as one connected system instead of treating every file separately.
+
+### Crypto Touchpoint Discovery
+
+Finds where cryptography is being used, such as:
+
+- signatures
+- wallet signing
+- RSA usage
+- hashing
+- API auth
+- TLS-related flows
+- encryption logic
+
+### Quantum Risk Mapping
+
+Flags cryptographic usage that may become unsafe in a quantum future, especially classical public-key systems.
+
+### PQC Migration Guidance
+
+Suggests where migration should start and what safer post-quantum direction to consider.
 
 ### Cross-Module Risk Analysis
-Identifies vulnerabilities that emerge from:
-- contract interactions
-- shared trust assumptions
-- external dependencies
+
+Highlights risks created by:
+
+- module interactions
+- trust boundaries
+- off-chain dependencies
+- bridge, oracle, and relayer flows
 
 ### AI Explanation Layer
-Explains detected issues in a structured, readable format for developers.
+
+Presents findings in a simpler and more readable way for developers.
 
 ### Risk Scoring Engine
-- Overall score (0–100)
-- Severity classification (Low / Medium / High)
-- System status (Good / Warning / Risky)
 
-### Developer Workflow
-- Paste contracts
-- Describe architecture
-- Scan instantly
-- Review detailed report
+Returns:
+
+- score from 0 to 100
+- severity level
+- overall system status
 
 ---
 
-## Example Insights
+## Example Findings
 
-The system can identify:
+Quantum Risk Copilot can surface things like:
 
-- ECDSA signature dependence (quantum vulnerable)
-- Centralized signer risks
-- Unsafe external calls
-- Weak randomness usage
-- Delegatecall vulnerabilities
-- Missing upgrade paths for cryptographic migration
-- Cross-module trust weaknesses
+- ECDSA or secp256k1 dependence
+- RSA usage in auth or certificates
+- TLS flows that may depend on vulnerable handshakes
+- API auth paths tied to classical crypto
+- unsafe external calls
+- weak randomness
+- delegatecall risk
+- cross-module trust exposure
+- missing post-quantum migration planning
 
 ---
 
@@ -95,12 +125,22 @@ The system can identify:
 - **Next.js (App Router)**
 - **TypeScript**
 - **Tailwind CSS**
-- Custom rule-based analysis engine
-- Optional AI integration layer
+- **Rule-based analysis engine**
+- **Optional AI explanation layer**
 
 ---
 
-## How to Run
+## How It Works
+
+1. Add multiple system modules
+2. Enter architecture notes and known touchpoints
+3. Run the audit
+4. Review crypto findings, quantum risks, and migration guidance
+5. Export the final report
+
+---
+
+## Local Development
 
 ```bash
 npm install

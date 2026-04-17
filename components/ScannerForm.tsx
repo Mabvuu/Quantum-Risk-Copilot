@@ -199,7 +199,7 @@ function buildReportSlides(scanResult: SystemScanResult | null): ReportSlide[] {
       title: "No Obvious Issues Found",
       severity: "None",
       description:
-        "This scan did not find obvious rule-based issues in the submitted code.",
+        "This scan did not find obvious rule-based issues in the submitted system modules.",
       recommendation:
         "You can still review manually, but this result looks clean from the current scanner rules.",
       kind: "summary",
@@ -345,10 +345,10 @@ function Modal({
 }
 
 export default function ScannerForm() {
-  const [systemName, setSystemName] = useState("Quantum Risk Copilot System");
+  const [systemName, setSystemName] = useState("Enterprise Crypto System");
   const [architectureNotes, setArchitectureNotes] = useState("");
   const [touchpointsText, setTouchpointsText] = useState(
-    "bridge\noracle\nrelayer"
+    "wallet signing\napi auth\ndata encryption"
   );
   const [modules, setModules] = useState<SystemModuleInput[]>([
     createEmptyModule(1),
@@ -439,7 +439,7 @@ export default function ScannerForm() {
   }
 
   function handleClear() {
-    setSystemName("Quantum Risk Copilot System");
+    setSystemName("Enterprise Crypto System");
     setArchitectureNotes("");
     setTouchpointsText("");
     setModules([createEmptyModule(1)]);
@@ -448,30 +448,30 @@ export default function ScannerForm() {
   }
 
   function handleLoadSingleSample() {
-    setSystemName("Single Contract Prototype");
-    setArchitectureNotes("Basic pasted-contract scan.");
-    setTouchpointsText("");
+    setSystemName("Legacy Signing Service");
+    setArchitectureNotes("Single-module cryptography review.");
+    setTouchpointsText("wallet signing\ndigital signatures");
     setModules([
       {
         id: "module-sample-1",
-        name: "Primary Contract",
+        name: "Signing Module",
         code: vulnerableSampleContract,
       },
     ]);
-    setSaveFileName("single-contract-report");
+    setSaveFileName("single-module-crypto-report");
     resetReport();
   }
 
   function handleLoadSystemSample() {
-    setSystemName("Treasury + Relay System");
+    setSystemName("Payments + Relay Platform");
     setArchitectureNotes(
-      "Token logic interacts with treasury release flow and an off-chain relay path."
+      "Multi-module system with signing, treasury flow, and external relay interactions."
     );
-    setTouchpointsText("bridge\noracle\nrelayer");
+    setTouchpointsText("wallet signing\nbridge\noracle\nrelayer\napi auth");
     setModules([
       {
         id: "module-sample-1",
-        name: "Token Module",
+        name: "Payments Module",
         code: vulnerableSampleContract,
       },
       {
@@ -480,7 +480,7 @@ export default function ScannerForm() {
         code: saferSampleContract,
       },
     ]);
-    setSaveFileName("treasury-relay-report");
+    setSaveFileName("payments-relay-quantum-report");
     resetReport();
   }
 
@@ -706,10 +706,10 @@ export default function ScannerForm() {
                   Quantum Risk Copilot
                 </p>
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-                  Full System Scanner
+                  Full-System Crypto Scanner
                 </h1>
                 <p className="mt-2 max-w-4xl text-sm text-zinc-400">
-                  Paste smart contracts, scan the whole system, and review the report cleanly.
+                  Discover cryptographic touchpoints, flag quantum-vulnerable usage, and prepare migration paths to post-quantum cryptography.
                 </p>
               </div>
 
@@ -719,7 +719,7 @@ export default function ScannerForm() {
                   disabled={isLoading}
                   variant="primary"
                 >
-                  {isLoading ? "Scanning..." : "Quick Scan"}
+                  {isLoading ? "Scanning..." : "Run Audit"}
                 </ActionButton>
 
                 <button
@@ -753,7 +753,7 @@ export default function ScannerForm() {
 
                 <div className="grid grid-cols-2 gap-2">
                   <ActionButton onClick={handleLoadSystemSample} variant="ghost">
-                    Load Multi
+                    Load System
                   </ActionButton>
                   <ActionButton onClick={handleClear} variant="ghost">
                     Clear
@@ -808,7 +808,7 @@ export default function ScannerForm() {
                             onChange={(event) =>
                               updateModule(moduleId, "code", event.target.value)
                             }
-                            placeholder={`Paste Solidity code for ${
+                            placeholder={`Paste code for ${
                               moduleItem.name || `Module ${index + 1}`
                             }...`}
                             className="h-full min-h-[510px] resize-none font-mono text-[13px] leading-6"
@@ -831,7 +831,7 @@ export default function ScannerForm() {
                           setSystemName(event.target.value);
                           resetReport();
                         }}
-                        placeholder="My blockchain system"
+                        placeholder="My platform"
                       />
                     </div>
 
@@ -843,23 +843,23 @@ export default function ScannerForm() {
                           setArchitectureNotes(event.target.value);
                           resetReport();
                         }}
-                        placeholder="Describe how the modules connect."
+                        placeholder="Describe how modules connect and where cryptography is used."
                         className="min-h-[150px] resize-y"
                       />
                     </div>
                   </div>
                 </SectionCard>
 
-                <SectionCard title="Touchpoints">
+                <SectionCard title="Crypto Touchpoints">
                   <div>
-                    <Label>System Touchpoints</Label>
+                    <Label>Known Touchpoints</Label>
                     <FieldTextarea
                       value={touchpointsText}
                       onChange={(event) => {
                         setTouchpointsText(event.target.value);
                         resetReport();
                       }}
-                      placeholder={`bridge\noracle\nrelayer`}
+                      placeholder={`wallet signing\napi auth\ndata encryption`}
                       className="min-h-[150px] resize-y"
                     />
                   </div>
@@ -883,7 +883,7 @@ export default function ScannerForm() {
               )}
 
               {result && (
-                <SectionCard title="Scan View">
+                <SectionCard title="Audit View">
                   <div className="space-y-4">
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       <div className="rounded-xl border border-white/10 bg-black p-4">
@@ -972,7 +972,7 @@ export default function ScannerForm() {
                     {result.tips?.length > 0 && (
                       <div className="rounded-xl border border-white/10 bg-black p-4">
                         <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Tips
+                          Migration Tips
                         </p>
                         <div className="mt-3 space-y-2">
                           {result.tips.map((tipItem, index) => (
@@ -1086,7 +1086,7 @@ export default function ScannerForm() {
               <SectionCard title="Live Summary">
                 {!hasScanned ? (
                   <div className="rounded-xl border border-dashed border-white/10 bg-black p-5 text-sm text-zinc-500">
-                    Scan something first.
+                    Run an audit first.
                   </div>
                 ) : !result ? (
                   <div className="rounded-xl border border-white/10 bg-black p-5 text-sm text-zinc-400">
@@ -1130,7 +1130,7 @@ export default function ScannerForm() {
                     {touchpoints.length > 0 && (
                       <div className="rounded-xl border border-white/10 bg-black p-4">
                         <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                          Touchpoints
+                          Crypto Touchpoints
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {touchpoints.map((touchpointItem) => (
