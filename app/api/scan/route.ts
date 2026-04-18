@@ -67,7 +67,8 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(result);
-  } catch {
+  } catch (err) {
+    console.error("SCAN ERROR:", err);
     return NextResponse.json(
       { error: "Something went wrong while scanning." },
       { status: 500 }
