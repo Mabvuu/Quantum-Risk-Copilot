@@ -56,6 +56,106 @@ function buildCounts(items: Array<{ severity: Severity }>): CountBuckets {
   };
 }
 
+function detectGenericModuleIssues(code: string): ScanIssue[] {
+  const issues: ScanIssue[] = [];
+
+  if (
+    /\b(private[_-]?key|secret[_-]?key|client[_-]?secret|api[_-]?key|password|token)\b\s*[:=]\s*["'`]/i.test(
+      code
+    )
+  ) {
+    issues.push({
+      id: "hardcoded-secret",
+      title: "Hardcoded secret or key material",
+      severity: "High",
+      description:
+        "This module appears to store sensitive key material or secrets directly in code or config-like content.",
+      recommendation:
+        "Move secrets and keys into secure secret storage or key management systems.",
+    });
+  }
+
+  if (
+    /\b(md5|sha1|sha-1|des|3des|tripledes|rc4)\b/i.test(code)
+  ) {
+    issues.push({
+      id: "legacy-crypto",
+      title: "Legacy cryptography detected",
+      severity: "High",
+      description:
+        "This module appears to reference older or weak cryptographic algorithms.",
+      recommendation:
+        "Replace legacy algorithms with modern approved alternatives and include them in migration planning.",
+    });
+  }
+
+  if (
+    /\b(sign|verify|signature|createSign|createVerify|SigningKey|signMessage|verifyMessage)\b/i.test(
+      code
+    )
+  ) {
+    issues.push({
+      id: "signature-flow",
+      title: "Signature flow detected",
+      severity: "Medium",
+      description:
+        "This module appears to perform signing or signature verification.",
+      recommendation:
+        "Document the algorithms, keys, and trust paths used for each signing flow.",
+    });
+  }
+
+  if (
+    /\b(certificate|cert\b|x509|x\.509|pem\b|crt\b|jks\b|p12\b|pkcs12|truststore|keystore)\b/i.test(
+      code
+    )
+  ) {
+    issues.push({
+      id: "certificate-dependency",
+      title: "Certificate or trust material detected",
+      severity: "Medium",
+      description:
+        "This module appears to depend on certificates, trust stores, or related trust material.",
+      recommendation:
+        "Review certificate chains, trust anchors, and handshake dependencies.",
+    });
+  }
+
+  if (
+    /\b(sslv3|tls1\.0|tls1\.1|verify\s*=\s*false|rejectUnauthorized\s*:\s*false|insecureSkipVerify\s*:\s*true)\b/i.test(
+      code
+    )
+  ) {
+    issues.push({
+      id: "insecure-transport-config",
+      title: "Weak or insecure transport security setting",
+      severity: "High",
+      description:
+        "This module appears to disable verification or use outdated transport security settings.",
+      recommendation:
+        "Enable certificate verification and use modern secure transport settings.",
+    });
+  }
+
+  if (
+    /\b(random\.random|math\.random|rand\(\)|srand\(|weakrandom|predictable random)\b/i.test(
+      code
+    )
+  ) {
+    issues.push({
+      id: "weak-randomness",
+      title: "Weak randomness source detected",
+      severity: "Medium",
+      description:
+        "This module appears to rely on a non-cryptographic or weak random source.",
+      recommendation:
+        "Use a cryptographically secure random generator for security-sensitive operations.",
+    });
+  }
+
+  return issues;
+}
+
 /* ------------------ MODULE SCAN ------------------ */
 
 function scanSingleModule(
@@ -63,27 +163,7 @@ function scanSingleModule(
   moduleId: string,
   moduleName: string
 ): ModuleScanResult {
-  const issues: ScanIssue[] = [];
-
-  if (/tx\.origin/.test(code)) {
-    issues.push({
-      id: "tx-origin",
-      title: "Unsafe tx.origin",
-      severity: "High",
-      description: "tx.origin used for auth",
-      recommendation: "Use msg.sender",
-    });
-  }
-
-  if (/delegatecall/.test(code)) {
-    issues.push({
-      id: "delegatecall",
-      title: "delegatecall usage",
-      severity: "High",
-      description: "delegatecall is dangerous",
-      recommendation: "Restrict strictly",
-    });
-  }
+  const issues = detectGenericModuleIssues(code);
 
   const quantum = scanQuantum(code);
 
@@ -104,15 +184,15 @@ function scanSingleModule(
     summary:
       allSignals.length === 0
         ? "No major issues"
-        : "Crypto + quantum risks detected",
+        : "Language-agnostic crypto and quantum-risk signals detected",
     overallRisk: getOverallRisk(allSignals),
     score,
     status: getStatus(score),
     contractType: "System Module",
     tips: [
-      "Inventory crypto usage",
-      "Flag RSA/ECC dependencies",
-      "Prepare PQC migration plan",
+      "Inventory crypto usage across code and config",
+      "Prioritize public-key and certificate dependencies",
+      "Prepare phased PQC migration guidance by module",
     ],
     counts: buildCounts(issues),
     quantumCounts: quantum.counts,
@@ -158,9 +238,9 @@ export function scanSmartContract(
     status: getStatus(score),
     contractType: moduleResults.length > 1 ? "System" : "Module",
     tips: [
-      "Map all crypto dependencies",
-      "Prioritize vulnerable algorithms",
-      "Phase PQC migration safely",
+      "Map all crypto dependencies across the system",
+      "Prioritize vulnerable algorithms and trust chains",
+      "Phase PQC migration safely across modules",
     ],
     counts: buildCounts(moduleResults.flatMap((m) => m.issues)),
     quantumCounts: buildCounts(moduleResults.flatMap((m) => m.quantumRisks)),

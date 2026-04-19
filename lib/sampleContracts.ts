@@ -1,151 +1,97 @@
-export const vulnerableSampleContract = `pragma solidity ^0.8.0;
+export const vulnerableSampleContract = `# Payment Gateway Service
+SERVICE_NAME=payments-api
+TLS_ENABLED=true
+TLS_VERSION=TLS1.0
+VERIFY_CERT=false
 
-contract VulnerableVault {
-    address public owner;
-    address public bridgeSigner;
-    address public implementation;
+JWT_SIGNING_ALG=RS256
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----demo-private-key-----END PRIVATE KEY-----"
+JWT_PUBLIC_KEY_PATH="./keys/jwt-public.pem"
 
-    mapping(address => uint256) public balances;
-    address[] public users;
+DATABASE_ENCRYPTION=AES-128-CBC
+PASSWORD_RESET_TOKEN_SECRET="reset-secret-123"
+API_KEY="demo-api-key"
 
-    constructor(address _bridgeSigner, address _implementation) {
-        owner = msg.sender;
-        bridgeSigner = _bridgeSigner;
-        implementation = _implementation;
-    }
+import crypto from "crypto";
+import jwt from "jsonwebtoken";
+import fs from "fs";
 
-    function deposit() public payable {
-        balances[msg.sender] += msg.value;
-        users.push(msg.sender);
-    }
+const privateKey = process.env.JWT_PRIVATE_KEY || "hardcoded-private-key";
+const cert = fs.readFileSync("./certs/server.pem", "utf8");
 
-    function withdraw(bytes memory signature) public {
-        bytes32 digest = keccak256(
-            abi.encodePacked(msg.sender, balances[msg.sender], block.timestamp)
-        );
+export function signUserToken(payload: object) {
+  return jwt.sign(payload, privateKey, { algorithm: "RS256" });
+}
 
-        address recovered = ecrecover(digest, 27, bytes32(0), bytes32(0));
-        require(recovered == bridgeSigner, "Invalid signer");
+export function encryptCardData(cardNumber: string) {
+  const cipher = crypto.createCipheriv("aes-128-cbc", Buffer.alloc(16), Buffer.alloc(16));
+  return cipher.update(cardNumber, "utf8", "hex") + cipher.final("hex");
+}
 
-        (bool sent, ) = payable(msg.sender).call{value: balances[msg.sender]}("");
-        balances[msg.sender] = 0;
-    }
+export function insecureRandomId() {
+  return Math.random().toString(36).slice(2);
+}
 
-    function updateBridgeSigner(address newSigner) public {
-        bridgeSigner = newSigner;
-    }
-
-    function emergencyBridgeRelease(address payable to, uint256 amount) public {
-        require(tx.origin == owner, "Only owner");
-        to.transfer(amount);
-    }
-
-    function emergencyDelegate(bytes calldata data) public {
-        implementation.delegatecall(data);
-    }
-
-    function batchRewardUsers(uint256 amount) public {
-        for (uint256 i = 0; i < users.length; i++) {
-            balances[users[i]] += amount;
-        }
-    }
-
-    function pickLuckyUser() public view returns (uint256) {
-        return uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao))) % users.length;
-    }
-
-    function dangerousMath(uint256 x) public pure returns (uint256) {
-        unchecked {
-            return x + 1;
-        }
-    }
-
-    function kill() public {
-        selfdestruct(payable(owner));
-    }
+export function connectGateway() {
+  return {
+    https: true,
+    rejectUnauthorized: false,
+    cert,
+  };
 }
 `;
 
-export const saferSampleContract = `pragma solidity ^0.8.0;
+export const saferSampleContract = `# Identity and Signing Service
+SERVICE_NAME=identity-service
+TLS_ENABLED=true
+TLS_VERSION=TLS1.3
+VERIFY_CERT=true
 
-contract SaferTreasuryModule {
-    address public owner;
-    address public bridgeSigner;
-    bool public paused;
-    bool private locked;
+JWT_SIGNING_ALG=EdDSA
+KMS_PROVIDER=cloud-kms
+JWT_PRIVATE_KEY_REF="kms://identity/signing-key"
+TRUSTSTORE_PATH="./trust/production-truststore.pem"
 
-    mapping(address => uint256) public balances;
-    address[] public users;
+import fs from "fs";
 
-    event Deposited(address indexed user, uint256 amount);
-    event Withdrawn(address indexed user, uint256 amount);
-    event Paused(bool status);
-    event AdminRotated(address indexed newOwner);
-    event BridgeSignerUpdated(address indexed newSigner);
+type SessionPayload = {
+  userId: string;
+  role: string;
+};
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Not owner");
-        _;
-    }
+export async function issueSession(payload: SessionPayload) {
+  return {
+    status: "issued",
+    algorithm: "managed-signing-service",
+    keySource: "cloud-kms",
+    payload,
+  };
+}
 
-    modifier whenNotPaused() {
-        require(!paused, "Paused");
-        _;
-    }
+export async function verifyIncomingCertificate() {
+  const trustStore = fs.readFileSync("./trust/production-truststore.pem", "utf8");
 
-    modifier nonReentrant() {
-        require(!locked, "Reentrant call");
-        locked = true;
-        _;
-        locked = false;
-    }
+  return {
+    verified: true,
+    trustStoreLoaded: Boolean(trustStore),
+    tlsVersion: "TLS1.3",
+  };
+}
 
-    constructor(address initialBridgeSigner) {
-        require(initialBridgeSigner != address(0), "Zero signer");
-        owner = msg.sender;
-        bridgeSigner = initialBridgeSigner;
-    }
+export async function encryptSensitiveRecord() {
+  return {
+    mode: "AES-256-GCM",
+    keySource: "managed-kms",
+    rotation: "enabled",
+  };
+}
 
-    function deposit() external payable whenNotPaused {
-        require(msg.value > 0, "No value sent");
-
-        if (balances[msg.sender] == 0) {
-            users.push(msg.sender);
-        }
-
-        balances[msg.sender] += msg.value;
-        emit Deposited(msg.sender, msg.value);
-    }
-
-    function withdraw(uint256 amount) external whenNotPaused nonReentrant {
-        require(amount > 0, "Invalid amount");
-        require(balances[msg.sender] >= amount, "Insufficient balance");
-
-        balances[msg.sender] -= amount;
-        payable(msg.sender).transfer(amount);
-
-        emit Withdrawn(msg.sender, amount);
-    }
-
-    function setPaused(bool _paused) external onlyOwner {
-        paused = _paused;
-        emit Paused(_paused);
-    }
-
-    function rotateAdmin(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "Zero address");
-        owner = newOwner;
-        emit AdminRotated(newOwner);
-    }
-
-    function updateBridgeSigner(address newSigner) external onlyOwner {
-        require(newSigner != address(0), "Zero signer");
-        bridgeSigner = newSigner;
-        emit BridgeSignerUpdated(newSigner);
-    }
-
-    function migrationNote() external pure returns (string memory) {
-        return "Future migration and key rotation supported by admin process.";
-    }
+export function auditCryptoInventory() {
+  return [
+    "managed signing",
+    "trust store validation",
+    "AES-256-GCM encryption",
+    "centralized key lifecycle",
+  ];
 }
 `;
